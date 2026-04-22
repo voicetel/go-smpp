@@ -74,13 +74,10 @@ func New(n Name, data []byte) Body {
 				udh := UDH{}
 				udh.IEI = Fixed{Data: data[i]}
 				udh.IELength = Fixed{Data: data[i+1]}
-				udh.IEData = Variable{}
 				l := int(data[i+1])
-				for j := 2; j < l+2; j++ {
-					udh.IEData.Data = append(udh.IEData.Data, data[i+j])
-				}
+				udh.IEData = SM{Data: data[i+2 : i+2+l]}
 				udhData = append(udhData, udh)
-				i += l + 3 // Ignore one byte after IEData (which is 0x00)
+				i += l + 2
 			}
 		}
 		return &UDHList{Data: udhData}

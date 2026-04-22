@@ -330,7 +330,7 @@ func (usl *UnSmeList) SerializeTo(w io.Writer) error {
 type UDH struct {
 	IEI      Fixed
 	IELength Fixed
-	IEData   Variable
+	IEData   SM // Raw bytes; no null-terminator handling.
 }
 
 // Len implements the Data interface.

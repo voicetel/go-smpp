@@ -129,7 +129,7 @@ loop:
 				udh.IELength = Fixed{Data: b}
 				// Read IEData
 				bt := r.Next(l)
-				udh.IEData = Variable{Data: bt}
+				udh.IEData = SM{Data: bt}
 				udhList = append(udhList, udh)
 				if len(bt) != l {
 					break loop

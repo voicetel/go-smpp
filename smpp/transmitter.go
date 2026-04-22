@@ -182,7 +182,8 @@ type ShortMessage struct {
 	DstList  []string // List of destination addreses for submit multi
 	DLs      []string //List if destribution list for submit multi
 	Text     pdutext.Codec
-	Validity time.Duration
+	Validity         time.Duration
+	RelativeValidity bool // Use relative format (000000HHMMSS000R) instead of absolute.
 	Register pdufield.DeliverySetting
 
 	// Other fields, normally optional.
@@ -392,7 +393,7 @@ func (t *Transmitter) SubmitLongMsg(sm *ShortMessage) ([]ShortMessage, error) {
 		}
 		f.Set(pdufield.RegisteredDelivery, uint8(sm.Register))
 		if sm.Validity != time.Duration(0) {
-			f.Set(pdufield.ValidityPeriod, convertValidity(sm.Validity))
+			f.Set(pdufield.ValidityPeriod, convertValidity(sm.Validity, sm.RelativeValidity))
 		}
 		f.Set(pdufield.ServiceType, sm.ServiceType)
 		f.Set(pdufield.SourceAddrTON, sm.SourceAddrTON)
@@ -436,7 +437,7 @@ func (t *Transmitter) submitMsg(sm *ShortMessage, p pdu.Body, dataCoding uint8) 
 	f.Set(pdufield.RegisteredDelivery, uint8(sm.Register))
 	// Check if the message has validity set.
 	if sm.Validity != time.Duration(0) {
-		f.Set(pdufield.ValidityPeriod, convertValidity(sm.Validity))
+		f.Set(pdufield.ValidityPeriod, convertValidity(sm.Validity, sm.RelativeValidity))
 	}
 	f.Set(pdufield.ServiceType, sm.ServiceType)
 	f.Set(pdufield.SourceAddrTON, sm.SourceAddrTON)
@@ -506,7 +507,7 @@ func (t *Transmitter) submitMsgMulti(sm *ShortMessage, p pdu.Body, dataCoding ui
 	f.Set(pdufield.RegisteredDelivery, uint8(sm.Register))
 	// Check if the message has validity set.
 	if sm.Validity != time.Duration(0) {
-		f.Set(pdufield.ValidityPeriod, convertValidity(sm.Validity))
+		f.Set(pdufield.ValidityPeriod, convertValidity(sm.Validity, sm.RelativeValidity))
 	}
 	f.Set(pdufield.ServiceType, sm.ServiceType)
 	f.Set(pdufield.SourceAddrTON, sm.SourceAddrTON)
@@ -605,7 +606,18 @@ func (t *Transmitter) QuerySM(src, msgid string, srcTON, srcNPI uint8) (*QueryRe
 	return qr, nil
 }
 
-func convertValidity(d time.Duration) string {
+func convertValidity(d time.Duration, relative bool) string {
+	if relative {
+		// Relative time format YYMMDDhhmmsstnnp, see SMPP3.4 spec 7.1.1.
+		total := int(d.Seconds())
+		days := total / 86400
+		total %= 86400
+		hours := total / 3600
+		total %= 3600
+		minutes := total / 60
+		seconds := total % 60
+		return fmt.Sprintf("%02d%02d%02d%02d%02d%02d000R", 0, 0, days, hours, minutes, seconds)
+	}
 	validity := time.Now().UTC().Add(d)
 	// Absolute time format YYMMDDhhmmsstnnp, see SMPP3.4 spec 7.1.1.
 	return validity.Format("060102150405") + "000+"

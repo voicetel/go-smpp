@@ -200,14 +200,25 @@ type ShortMessage struct {
 	SMDefaultMsgID       uint8
 	NumberDests          uint8
 
-	resp struct {
-		sync.Mutex
-		p pdu.Body
+	resp *smResp
+}
+
+type smResp struct {
+	sync.Mutex
+	p pdu.Body
+}
+
+func (sm *ShortMessage) initResp() {
+	if sm.resp == nil {
+		sm.resp = &smResp{}
 	}
 }
 
 // Resp returns the response PDU, or nil if not set.
 func (sm *ShortMessage) Resp() pdu.Body {
+	if sm.resp == nil {
+		return nil
+	}
 	sm.resp.Lock()
 	defer sm.resp.Unlock()
 	return sm.resp.p
@@ -217,6 +228,9 @@ func (sm *ShortMessage) Resp() pdu.Body {
 // Returns empty if the response PDU is not available, or does
 // not contain the MessageID field.
 func (sm *ShortMessage) RespID() string {
+	if sm.resp == nil {
+		return ""
+	}
 	sm.resp.Lock()
 	defer sm.resp.Unlock()
 	if sm.resp.p == nil {
@@ -233,6 +247,9 @@ func (sm *ShortMessage) RespID() string {
 // Returns zero and an error if the response PDU is not available, or does
 // not contain the NoUnsuccess field.
 func (sm *ShortMessage) NumbUnsuccess() (int, error) {
+	if sm.resp == nil {
+		return 0, errors.New("Response PDU not available")
+	}
 	sm.resp.Lock()
 	defer sm.resp.Unlock()
 	if sm.resp.p == nil {
@@ -254,6 +271,9 @@ func (sm *ShortMessage) NumbUnsuccess() (int, error) {
 // Returns nil and an error if the response PDU is not available, or does
 // not contain the unsuccess_sme field.
 func (sm *ShortMessage) UnsuccessSmes() ([]UnsucessDest, error) {
+	if sm.resp == nil {
+		return nil, errors.New("Response PDU not available")
+	}
 	sm.resp.Lock()
 	defer sm.resp.Unlock()
 	if sm.resp.p == nil {
@@ -390,9 +410,7 @@ func (t *Transmitter) SubmitLongMsg(sm *ShortMessage) ([]ShortMessage, error) {
 		if err != nil {
 			return nil, err
 		}
-		sm.resp.Lock()
-		sm.resp.p = resp.PDU
-		sm.resp.Unlock()
+		sm.resp = &smResp{p: resp.PDU}
 		if resp.PDU == nil {
 			return parts, fmt.Errorf("unexpected empty PDU")
 		}
@@ -436,6 +454,7 @@ func (t *Transmitter) submitMsg(sm *ShortMessage, p pdu.Body, dataCoding uint8) 
 	if err != nil {
 		return nil, err
 	}
+	sm.initResp()
 	sm.resp.Lock()
 	sm.resp.p = resp.PDU
 	sm.resp.Unlock()
@@ -503,6 +522,7 @@ func (t *Transmitter) submitMsgMulti(sm *ShortMessage, p pdu.Body, dataCoding ui
 	if err != nil {
 		return nil, err
 	}
+	sm.initResp()
 	sm.resp.Lock()
 	sm.resp.p = resp.PDU
 	sm.resp.Unlock()

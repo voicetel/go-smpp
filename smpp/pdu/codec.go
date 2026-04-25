@@ -100,7 +100,12 @@ func (pdu *codec) SerializeTo(w io.Writer) error {
 			return err
 		}
 	}
-	pdu.h.Len = uint32(pdu.Len())
+	// Header length must reflect what we are about to write, not the
+	// raw size of the field map: Map.Set on ShortMessage adds entries
+	// like DataCoding that are not necessarily in the field list, so
+	// counting the map would overstate the wire length on PDUs that
+	// omit DataCoding (e.g. ReplaceSM).
+	pdu.h.Len = uint32(HeaderLen + b.Len())
 	err := pdu.h.SerializeTo(w)
 	if err != nil {
 		return err
@@ -146,15 +151,15 @@ func Decode(r io.Reader) (Body, error) {
 	}
 	switch hdr.ID {
 	case AlertNotificationID:
-		// TODO(fiorix): Implement AlertNotification.
+		return decodeFields(newAlertNotification(hdr), b)
 	case BindReceiverID, BindTransceiverID, BindTransmitterID:
 		return decodeFields(newBind(hdr), b)
 	case BindReceiverRespID, BindTransceiverRespID, BindTransmitterRespID:
 		return decodeFields(newBindResp(hdr), b)
 	case CancelSMID:
-		// TODO(fiorix): Implement CancelSM.
+		return decodeFields(newCancelSM(hdr), b)
 	case CancelSMRespID:
-		// TODO(fiorix): Implement CancelSMResp.
+		return decodeFields(newCancelSMResp(hdr), b)
 	case DataSMID:
 		return decodeFields(newDataSM(hdr), b)
 	case DataSMRespID:
@@ -170,15 +175,15 @@ func Decode(r io.Reader) (Body, error) {
 	case GenericNACKID:
 		return decodeFields(newGenericNACK(hdr), b)
 	case OutbindID:
-		// TODO(fiorix): Implement Outbind.
+		return decodeFields(newOutbind(hdr), b)
 	case QuerySMID:
 		return decodeFields(newQuerySM(hdr), b)
 	case QuerySMRespID:
 		return decodeFields(newQuerySMResp(hdr), b)
 	case ReplaceSMID:
-		// TODO(fiorix): Implement ReplaceSM.
+		return decodeFields(newReplaceSM(hdr), b)
 	case ReplaceSMRespID:
-		// TODO(fiorix): Implement ReplaceSMResp.
+		return decodeFields(newReplaceSMResp(hdr), b)
 	case SubmitMultiID:
 		return decodeFields(newSubmitMulti(hdr), b)
 	case SubmitMultiRespID:
@@ -194,5 +199,4 @@ func Decode(r io.Reader) (Body, error) {
 	default:
 		return nil, fmt.Errorf("unknown PDU type: %#x", hdr.ID)
 	}
-	return nil, fmt.Errorf("PDU not implemented: %#x", hdr.ID)
 }

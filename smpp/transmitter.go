@@ -606,6 +606,112 @@ func (t *Transmitter) QuerySM(src, msgid string, srcTON, srcNPI uint8) (*QueryRe
 	return qr, nil
 }
 
+// CancelSM requests cancellation of a previously submitted message.
+// At minimum, sm.Src and msgID must be set. Per SMPP 3.4 §4.9 the
+// SMSC may also use sm.Dst (with TON/NPI) and sm.ServiceType to
+// disambiguate; pass an empty/zero value when not needed. Returns nil
+// on a successful response.
+func (t *Transmitter) CancelSM(sm *ShortMessage, msgID string) error {
+	p := pdu.NewCancelSM()
+	f := p.Fields()
+	f.Set(pdufield.ServiceType, sm.ServiceType)
+	f.Set(pdufield.MessageID, msgID)
+	f.Set(pdufield.SourceAddrTON, sm.SourceAddrTON)
+	f.Set(pdufield.SourceAddrNPI, sm.SourceAddrNPI)
+	f.Set(pdufield.SourceAddr, sm.Src)
+	f.Set(pdufield.DestAddrTON, sm.DestAddrTON)
+	f.Set(pdufield.DestAddrNPI, sm.DestAddrNPI)
+	f.Set(pdufield.DestinationAddr, sm.Dst)
+	resp, err := t.do(p)
+	if err != nil {
+		return err
+	}
+	if id := resp.PDU.Header().ID; id != pdu.CancelSMRespID {
+		return fmt.Errorf("unexpected PDU ID: %s", id)
+	}
+	if s := resp.PDU.Header().Status; s != 0 {
+		return s
+	}
+	return nil
+}
+
+// ReplaceSM replaces the body of a previously submitted message that
+// has not yet been delivered. The replacement uses sm.Text,
+// sm.ScheduleDeliveryTime, sm.Validity / sm.RelativeValidity,
+// sm.Register and sm.SMDefaultMsgID. Source address fields must match
+// the original submission. Returns nil on a successful response.
+func (t *Transmitter) ReplaceSM(sm *ShortMessage, msgID string) error {
+	p := pdu.NewReplaceSM()
+	f := p.Fields()
+	f.Set(pdufield.MessageID, msgID)
+	f.Set(pdufield.SourceAddrTON, sm.SourceAddrTON)
+	f.Set(pdufield.SourceAddrNPI, sm.SourceAddrNPI)
+	f.Set(pdufield.SourceAddr, sm.Src)
+	f.Set(pdufield.ScheduleDeliveryTime, sm.ScheduleDeliveryTime)
+	if sm.Validity != time.Duration(0) {
+		f.Set(pdufield.ValidityPeriod, convertValidity(sm.Validity, sm.RelativeValidity))
+	} else {
+		f.Set(pdufield.ValidityPeriod, "")
+	}
+	f.Set(pdufield.RegisteredDelivery, uint8(sm.Register))
+	f.Set(pdufield.SMDefaultMsgID, sm.SMDefaultMsgID)
+	if sm.Text != nil {
+		f.Set(pdufield.ShortMessage, sm.Text)
+	}
+	resp, err := t.do(p)
+	if err != nil {
+		return err
+	}
+	if id := resp.PDU.Header().ID; id != pdu.ReplaceSMRespID {
+		return fmt.Errorf("unexpected PDU ID: %s", id)
+	}
+	if s := resp.PDU.Header().Status; s != 0 {
+		return s
+	}
+	return nil
+}
+
+// SubmitData sends a data_sm and updates sm with the response. Unlike
+// submit_sm, data_sm carries no inline short_message; the body must be
+// supplied via the message_payload TLV
+// (sm.TLVFields[pdutlv.TagMessagePayload]) when needed. Useful for
+// payloads larger than 254 octets without UDH segmentation, on SMSCs
+// that support it.
+func (t *Transmitter) SubmitData(sm *ShortMessage) (*ShortMessage, error) {
+	p := pdu.NewDataSM(sm.TLVFields)
+	f := p.Fields()
+	f.Set(pdufield.ServiceType, sm.ServiceType)
+	f.Set(pdufield.SourceAddrTON, sm.SourceAddrTON)
+	f.Set(pdufield.SourceAddrNPI, sm.SourceAddrNPI)
+	f.Set(pdufield.SourceAddr, sm.Src)
+	f.Set(pdufield.DestAddrTON, sm.DestAddrTON)
+	f.Set(pdufield.DestAddrNPI, sm.DestAddrNPI)
+	f.Set(pdufield.DestinationAddr, sm.Dst)
+	f.Set(pdufield.ESMClass, sm.ESMClass)
+	f.Set(pdufield.RegisteredDelivery, uint8(sm.Register))
+	if sm.Text != nil {
+		f.Set(pdufield.DataCoding, uint8(sm.Text.Type()))
+	}
+	resp, err := t.do(p)
+	if err != nil {
+		return nil, err
+	}
+	sm.initResp()
+	sm.resp.Lock()
+	sm.resp.p = resp.PDU
+	sm.resp.Unlock()
+	if resp.PDU == nil {
+		return nil, fmt.Errorf("unexpected empty PDU")
+	}
+	if id := resp.PDU.Header().ID; id != pdu.DataSMRespID {
+		return sm, fmt.Errorf("unexpected PDU ID: %s", id)
+	}
+	if s := resp.PDU.Header().Status; s != 0 {
+		return sm, s
+	}
+	return sm, resp.Err
+}
+
 func convertValidity(d time.Duration, relative bool) string {
 	if relative {
 		// Relative time format YYMMDDhhmmsstnnp, see SMPP3.4 spec 7.1.1.

@@ -31,6 +31,7 @@ loop:
 		case
 			AddressRange,
 			DestinationAddr,
+			ESMAddr,
 			ErrorCode,
 			FinalDate,
 			MessageID,
@@ -56,6 +57,8 @@ loop:
 			DataCoding,
 			DestAddrNPI,
 			DestAddrTON,
+			ESMAddrNPI,
+			ESMAddrTON,
 			ESMClass,
 			InterfaceVersion,
 			NumberDests,

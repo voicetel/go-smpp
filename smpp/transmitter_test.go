@@ -345,6 +345,103 @@ func TestSubmitMulti(t *testing.T) {
 	}
 }
 
+func TestCancelSM(t *testing.T) {
+	s := smpptest.NewUnstartedServer()
+	s.Handler = func(c smpptest.Conn, p pdu.Body) {
+		if p.Header().ID != pdu.CancelSMID {
+			smpptest.EchoHandler(c, p)
+			return
+		}
+		r := pdu.NewCancelSMResp()
+		r.Header().Seq = p.Header().Seq
+		c.Write(r)
+	}
+	s.Start()
+	defer s.Close()
+	tx := &Transmitter{
+		Addr:   s.Addr(),
+		User:   smpptest.DefaultUser,
+		Passwd: smpptest.DefaultPasswd,
+	}
+	defer tx.Close()
+	if conn := <-tx.Bind(); conn.Status() != Connected {
+		t.Fatal(conn.Error())
+	}
+	err := tx.CancelSM(&ShortMessage{Src: "root", Dst: "foobar"}, "msg-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReplaceSM(t *testing.T) {
+	s := smpptest.NewUnstartedServer()
+	s.Handler = func(c smpptest.Conn, p pdu.Body) {
+		if p.Header().ID != pdu.ReplaceSMID {
+			smpptest.EchoHandler(c, p)
+			return
+		}
+		r := pdu.NewReplaceSMResp()
+		r.Header().Seq = p.Header().Seq
+		c.Write(r)
+	}
+	s.Start()
+	defer s.Close()
+	tx := &Transmitter{
+		Addr:   s.Addr(),
+		User:   smpptest.DefaultUser,
+		Passwd: smpptest.DefaultPasswd,
+	}
+	defer tx.Close()
+	if conn := <-tx.Bind(); conn.Status() != Connected {
+		t.Fatal(conn.Error())
+	}
+	err := tx.ReplaceSM(&ShortMessage{
+		Src:      "root",
+		Text:     pdutext.Raw("updated"),
+		Validity: time.Minute,
+		Register: pdufield.NoDeliveryReceipt,
+	}, "msg-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSubmitData(t *testing.T) {
+	s := smpptest.NewUnstartedServer()
+	s.Handler = func(c smpptest.Conn, p pdu.Body) {
+		if p.Header().ID != pdu.DataSMID {
+			smpptest.EchoHandler(c, p)
+			return
+		}
+		r := pdu.NewDataSMResp()
+		r.Header().Seq = p.Header().Seq
+		r.Fields().Set(pdufield.MessageID, "data-id")
+		c.Write(r)
+	}
+	s.Start()
+	defer s.Close()
+	tx := &Transmitter{
+		Addr:   s.Addr(),
+		User:   smpptest.DefaultUser,
+		Passwd: smpptest.DefaultPasswd,
+	}
+	defer tx.Close()
+	if conn := <-tx.Bind(); conn.Status() != Connected {
+		t.Fatal(conn.Error())
+	}
+	sm, err := tx.SubmitData(&ShortMessage{
+		Src:      "root",
+		Dst:      "foobar",
+		Register: pdufield.NoDeliveryReceipt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id := sm.RespID(); id != "data-id" {
+		t.Fatalf("RespID: want %q, have %q", "data-id", id)
+	}
+}
+
 func TestNotConnected(t *testing.T) {
 	s := smpptest.NewUnstartedServer()
 	s.Handler = func(c smpptest.Conn, p pdu.Body) {

@@ -363,10 +363,15 @@ func newDataSM(hdr *Header) *codec {
 	}
 }
 
-// NewDataSM creates and initializes a new DataSM PDU.
-func NewDataSM() Body {
+// NewDataSM creates and initializes a new DataSM PDU. fields carries
+// optional TLVs (e.g. message_payload) to set at construction time —
+// pass nil for none, mirroring NewSubmitSM.
+func NewDataSM(fields pdutlv.Fields) Body {
 	b := newDataSM(&Header{ID: DataSMID})
 	b.init()
+	for tag, value := range fields {
+		b.t.Set(tag, value)
+	}
 	return b
 }
 
@@ -437,6 +442,135 @@ func NewUnbindResp() Body {
 // as required when replying to a peer-initiated unbind (SMPP 3.4 §4.2/4.3).
 func NewUnbindRespSeq(seq uint32) Body {
 	b := newUnbindResp(&Header{ID: UnbindRespID, Seq: seq})
+	b.init()
+	return b
+}
+
+// CancelSM PDU.
+type CancelSM struct{ *codec }
+
+func newCancelSM(hdr *Header) *codec {
+	return &codec{
+		h: hdr,
+		l: pdufield.List{
+			pdufield.ServiceType,
+			pdufield.MessageID,
+			pdufield.SourceAddrTON,
+			pdufield.SourceAddrNPI,
+			pdufield.SourceAddr,
+			pdufield.DestAddrTON,
+			pdufield.DestAddrNPI,
+			pdufield.DestinationAddr,
+		},
+	}
+}
+
+// NewCancelSM creates and initializes a new CancelSM PDU.
+func NewCancelSM() Body {
+	b := newCancelSM(&Header{ID: CancelSMID})
+	b.init()
+	return b
+}
+
+// CancelSMResp PDU.
+type CancelSMResp struct{ *codec }
+
+func newCancelSMResp(hdr *Header) *codec {
+	return &codec{h: hdr}
+}
+
+// NewCancelSMResp creates and initializes a new CancelSMResp PDU.
+func NewCancelSMResp() Body {
+	b := newCancelSMResp(&Header{ID: CancelSMRespID})
+	b.init()
+	return b
+}
+
+// ReplaceSM PDU.
+type ReplaceSM struct{ *codec }
+
+func newReplaceSM(hdr *Header) *codec {
+	return &codec{
+		h: hdr,
+		l: pdufield.List{
+			pdufield.MessageID,
+			pdufield.SourceAddrTON,
+			pdufield.SourceAddrNPI,
+			pdufield.SourceAddr,
+			pdufield.ScheduleDeliveryTime,
+			pdufield.ValidityPeriod,
+			pdufield.RegisteredDelivery,
+			pdufield.SMDefaultMsgID,
+			pdufield.SMLength,
+			pdufield.ShortMessage,
+		},
+	}
+}
+
+// NewReplaceSM creates and initializes a new ReplaceSM PDU.
+func NewReplaceSM() Body {
+	b := newReplaceSM(&Header{ID: ReplaceSMID})
+	b.init()
+	return b
+}
+
+// ReplaceSMResp PDU.
+type ReplaceSMResp struct{ *codec }
+
+func newReplaceSMResp(hdr *Header) *codec {
+	return &codec{h: hdr}
+}
+
+// NewReplaceSMResp creates and initializes a new ReplaceSMResp PDU.
+func NewReplaceSMResp() Body {
+	b := newReplaceSMResp(&Header{ID: ReplaceSMRespID})
+	b.init()
+	return b
+}
+
+// AlertNotification PDU. Sent by the SMSC to notify the ESME that a
+// previously unavailable mobile station has become available.
+type AlertNotification struct{ *codec }
+
+func newAlertNotification(hdr *Header) *codec {
+	return &codec{
+		h: hdr,
+		l: pdufield.List{
+			pdufield.SourceAddrTON,
+			pdufield.SourceAddrNPI,
+			pdufield.SourceAddr,
+			pdufield.ESMAddrTON,
+			pdufield.ESMAddrNPI,
+			pdufield.ESMAddr,
+		},
+	}
+}
+
+// NewAlertNotification creates and initializes a new AlertNotification
+// PDU.
+func NewAlertNotification() Body {
+	b := newAlertNotification(&Header{ID: AlertNotificationID})
+	b.init()
+	return b
+}
+
+// Outbind PDU. Sent by the SMSC to instruct an ESME to bind back as a
+// receiver.
+type Outbind struct{ *codec }
+
+func newOutbind(hdr *Header) *codec {
+	return &codec{
+		h: hdr,
+		l: pdufield.List{
+			pdufield.SystemID,
+			pdufield.Password,
+		},
+	}
+}
+
+// NewOutbind creates and initializes a new Outbind PDU.
+func NewOutbind() Body {
+	b := newOutbind(&Header{ID: OutbindID})
 	b.init()
 	return b
 }

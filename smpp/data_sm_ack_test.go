@@ -43,7 +43,7 @@ func TestReceiverDataSMAutoAck(t *testing.T) {
 		t.Fatal(conn.Error())
 	}
 
-	ds := pdu.NewDataSM()
+	ds := pdu.NewDataSM(nil)
 	seq := ds.Header().Seq
 	s.BroadcastMessage(ds)
 

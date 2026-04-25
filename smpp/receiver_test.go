@@ -45,6 +45,81 @@ func TestReceiver(t *testing.T) {
 	}
 }
 
+// TestClientAutoRespondsToUnbind asserts that an unbind sent by the
+// SMSC is acknowledged with unbind_resp and the Unbind PDU is forwarded
+// to the Handler for the caller to observe. The client deliberately does
+// NOT proactively tear the connection down itself at this layer — that
+// decision (and any Close()/reconnect) is left to the caller, so that a
+// higher-level session-generation-aware close path (as the gateway
+// implements) can't be raced by this client closing the connection out
+// from under it. See the UnbindID case in client.go.
+func TestClientAutoRespondsToUnbind(t *testing.T) {
+	gotUnbindResp := make(chan struct{}, 1)
+	s := smpptest.NewUnstartedServer()
+	s.Handler = func(c smpptest.Conn, p pdu.Body) {
+		if p.Header().ID == pdu.UnbindRespID {
+			select {
+			case gotUnbindResp <- struct{}{}:
+			default:
+			}
+		}
+	}
+	s.Start()
+	defer s.Close()
+
+	rc := make(chan ConnStatus, 8)
+	gotUnbind := make(chan struct{}, 1)
+	r := &Receiver{
+		Addr:   s.Addr(),
+		User:   smpptest.DefaultUser,
+		Passwd: smpptest.DefaultPasswd,
+		Handler: func(p pdu.Body) {
+			if p.Header().ID == pdu.UnbindID {
+				select {
+				case gotUnbind <- struct{}{}:
+				default:
+				}
+			}
+		},
+	}
+	defer r.Close()
+	go func() {
+		for c := range r.Bind() {
+			rc <- c
+		}
+	}()
+
+	// Wait for initial Connected before nudging.
+	waitFor := func(want ConnStatusID) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for {
+			select {
+			case c := <-rc:
+				if c.Status() == want {
+					return
+				}
+			case <-deadline:
+				t.Fatalf("timed out waiting for status %s", want)
+			}
+		}
+	}
+	waitFor(Connected)
+
+	s.BroadcastMessage(pdu.NewUnbind())
+
+	select {
+	case <-gotUnbindResp:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not receive unbind_resp")
+	}
+	select {
+	case <-gotUnbind:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Handler did not receive the forwarded Unbind PDU")
+	}
+}
+
 // TestReceiverNoHandlerDoesNotBlock guards against a regression where
 // a Receiver bound without a Handler deadlocked the client read loop
 // on the first inbound PDU because nothing drained the inbox channel.

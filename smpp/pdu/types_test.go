@@ -82,3 +82,113 @@ func TestBindResp(t *testing.T) {
 	t.Log(tx)
 }
 */
+
+func roundTrip(t *testing.T, p Body, wantID ID) Body {
+	t.Helper()
+	var b bytes.Buffer
+	if err := p.SerializeTo(&b); err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if int(p.Header().Len) != b.Len() {
+		t.Fatalf("header len %d, serialized %d", p.Header().Len, b.Len())
+	}
+	got, err := Decode(&b)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Header().ID != wantID {
+		t.Fatalf("decoded ID: want %s, have %s", wantID, got.Header().ID)
+	}
+	return got
+}
+
+func TestCancelSMRoundTrip(t *testing.T) {
+	p := NewCancelSM()
+	f := p.Fields()
+	f.Set(pdufield.ServiceType, "")
+	f.Set(pdufield.MessageID, "msg-7")
+	f.Set(pdufield.SourceAddrTON, uint8(1))
+	f.Set(pdufield.SourceAddrNPI, uint8(1))
+	f.Set(pdufield.SourceAddr, "src")
+	f.Set(pdufield.DestAddrTON, uint8(1))
+	f.Set(pdufield.DestAddrNPI, uint8(1))
+	f.Set(pdufield.DestinationAddr, "dst")
+
+	got := roundTrip(t, p, CancelSMID)
+	if v := got.Fields()[pdufield.MessageID].String(); v != "msg-7" {
+		t.Fatalf("message_id: %q", v)
+	}
+	if v := got.Fields()[pdufield.SourceAddr].String(); v != "src" {
+		t.Fatalf("source_addr: %q", v)
+	}
+	if v := got.Fields()[pdufield.DestinationAddr].String(); v != "dst" {
+		t.Fatalf("destination_addr: %q", v)
+	}
+}
+
+func TestCancelSMRespRoundTrip(t *testing.T) {
+	roundTrip(t, NewCancelSMResp(), CancelSMRespID)
+}
+
+func TestReplaceSMRoundTrip(t *testing.T) {
+	p := NewReplaceSM()
+	f := p.Fields()
+	f.Set(pdufield.MessageID, "msg-9")
+	f.Set(pdufield.SourceAddrTON, uint8(1))
+	f.Set(pdufield.SourceAddrNPI, uint8(1))
+	f.Set(pdufield.SourceAddr, "sender")
+	f.Set(pdufield.ScheduleDeliveryTime, "")
+	f.Set(pdufield.ValidityPeriod, "")
+	f.Set(pdufield.RegisteredDelivery, uint8(0))
+	f.Set(pdufield.SMDefaultMsgID, uint8(0))
+	f.Set(pdufield.ShortMessage, []byte("hi"))
+
+	got := roundTrip(t, p, ReplaceSMID)
+	if v := got.Fields()[pdufield.MessageID].String(); v != "msg-9" {
+		t.Fatalf("message_id: %q", v)
+	}
+	if v := string(got.Fields()[pdufield.ShortMessage].Bytes()); v != "hi" {
+		t.Fatalf("short_message: %q", v)
+	}
+}
+
+func TestReplaceSMRespRoundTrip(t *testing.T) {
+	roundTrip(t, NewReplaceSMResp(), ReplaceSMRespID)
+}
+
+func TestAlertNotificationRoundTrip(t *testing.T) {
+	p := NewAlertNotification()
+	f := p.Fields()
+	f.Set(pdufield.SourceAddrTON, uint8(1))
+	f.Set(pdufield.SourceAddrNPI, uint8(1))
+	f.Set(pdufield.SourceAddr, "msisdn")
+	f.Set(pdufield.ESMAddrTON, uint8(2))
+	f.Set(pdufield.ESMAddrNPI, uint8(0))
+	f.Set(pdufield.ESMAddr, "esme")
+
+	got := roundTrip(t, p, AlertNotificationID)
+	if v := got.Fields()[pdufield.SourceAddr].String(); v != "msisdn" {
+		t.Fatalf("source_addr: %q", v)
+	}
+	if v := got.Fields()[pdufield.ESMAddr].String(); v != "esme" {
+		t.Fatalf("esme_addr: %q", v)
+	}
+	if v := got.Fields()[pdufield.ESMAddrTON].String(); v != "2" {
+		t.Fatalf("esme_addr_ton: %q", v)
+	}
+}
+
+func TestOutbindRoundTrip(t *testing.T) {
+	p := NewOutbind()
+	f := p.Fields()
+	f.Set(pdufield.SystemID, "smsc")
+	f.Set(pdufield.Password, "secret")
+
+	got := roundTrip(t, p, OutbindID)
+	if v := got.Fields()[pdufield.SystemID].String(); v != "smsc" {
+		t.Fatalf("system_id: %q", v)
+	}
+	if v := got.Fields()[pdufield.Password].String(); v != "secret" {
+		t.Fatalf("password: %q", v)
+	}
+}

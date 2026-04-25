@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fiorix/go-smpp/v2/smpp/pdu"
-	"github.com/fiorix/go-smpp/v2/smpp/pdu/pdufield"
-	"github.com/fiorix/go-smpp/v2/smpp/smpptest"
+	"github.com/voicetel/go-smpp/smpp/pdu"
+	"github.com/voicetel/go-smpp/smpp/pdu/pdufield"
+	"github.com/voicetel/go-smpp/smpp/smpptest"
 )
 
 // concat8Part builds a deliver_sm whose short_message body carries an

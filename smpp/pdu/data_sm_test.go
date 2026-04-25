@@ -16,7 +16,7 @@ import (
 // message_payload TLV, decode it back, and recover the fields and TLV. Before
 // this the codec returned "PDU not implemented" for data_sm.
 func TestDataSM_RoundTrip(t *testing.T) {
-	p := NewDataSM()
+	p := NewDataSM(nil)
 	f := p.Fields()
 	f.Set(pdufield.SourceAddr, "12345")
 	f.Set(pdufield.DestinationAddr, "67890")

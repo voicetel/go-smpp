@@ -111,14 +111,14 @@ func (srv *Server) Serve() {
 	}
 }
 
-// BroadcastMessage broadcasts a test PDU to the all bound clients
+// BroadcastMessage broadcasts a test PDU to all bound clients.
 func (srv *Server) BroadcastMessage(p pdu.Body) {
 	srv.mu.Lock()
 	conns := make([]Conn, len(srv.conns))
 	copy(conns, srv.conns)
 	srv.mu.Unlock()
-	for i := range conns {
-		conns[i].Write(p)
+	for _, c := range conns {
+		c.Write(p)
 	}
 }
 

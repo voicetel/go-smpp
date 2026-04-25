@@ -90,17 +90,21 @@ func (r *Receiver) Bind() <-chan ConnStatus {
 	r.cl.client = c
 
 	c.init()
-	go c.Bind()
 
-	// Set up message merging if requested
+	// Set up message merging before starting the connect goroutine, so
+	// bindFunc's clear-on-rebind and the cleanup goroutine never race
+	// with this initial map allocation.
 	if r.MergeInterval > 0 {
 		if r.MergeCleanupInterval == 0 {
 			r.MergeCleanupInterval = 1 * time.Second
 		}
-
+		r.mg.Lock()
 		r.mg.mergeHolders = make(map[int]*MergeHolder)
+		r.mg.Unlock()
 		go r.mergeCleaner()
 	}
+
+	go c.Bind()
 
 	return c.Status
 }
@@ -146,18 +150,9 @@ func idInList(id pdu.ID, list []pdu.ID) bool {
 }
 
 func (r *Receiver) handlePDU() {
-	var (
-		ok                bool
-		sm                *pdufield.SM
-		udhList           *pdufield.UDHList
-		msgID, partsCount int
-		mh                *MergeHolder
-		orderedBodies     []*bytes.Buffer
-	)
 	autoRespondDeliver := !idInList(pdu.DeliverSMID, r.SkipAutoRespondIDs)
 	autoRespondData := !idInList(pdu.DataSMID, r.SkipAutoRespondIDs)
 
-loop:
 	for {
 		p, err := r.cl.Read()
 		if err != nil || p == nil {
@@ -177,89 +172,142 @@ loop:
 			}
 		}
 
-		if r.MergeInterval == 0 { // Handle the PDU if merging is not needed
-			r.Handler(p)
+		if r.MergeInterval == 0 || !hasUDHI(p) {
+			r.deliver(p)
 			continue
 		}
 
-		sm, ok = p.Fields()[pdufield.ShortMessage].(*pdufield.SM)
+		sm, ok := p.Fields()[pdufield.ShortMessage].(*pdufield.SM)
 		if !ok {
-			// PDU is malformed, do not process
 			continue
 		}
 
-		udhList, ok = p.Fields()[pdufield.GSMUserData].(*pdufield.UDHList)
-		if !ok { // Check if GSMUserData is present inside the PDU, do not try to merge if it's not
-			r.Handler(p)
+		merged, ready := r.tryMerge(sm.Data)
+		if !ready {
 			continue
 		}
-
-		for _, udh := range udhList.Data {
-			switch udh.IEI.Data {
-			case 0x00: // Concatenated short messages, 8-bit reference number
-				if int(udh.IELength.Data) != 3 { // Contains message ID, parts count and part number
-					// PDU is malformed, do not process
-					break
-				}
-
-				// Get message ID and total count of its parts
-				msgID = int(udh.IEData.Data[0])
-				partsCount = int(udh.IEData.Data[1])
-
-				// Check if message part was already added to a MergeHolder
-				r.mg.Lock()
-				if mh, ok = r.mg.mergeHolders[msgID]; !ok {
-					mh = &MergeHolder{
-						MessageID:  msgID,
-						PartsCount: partsCount,
-					}
-
-					r.mg.mergeHolders[msgID] = mh
-				}
-				r.mg.Unlock()
-
-				// Add current part of the message to the slice
-				mh.MessageParts = append(mh.MessageParts, &MessagePart{
-					PartID: int(udh.IEData.Data[2]),
-					Data:   bytes.NewBuffer(sm.Data),
-				})
-				mh.LastWriteTime = time.Now()
-
-				// Check if we have all the parts of the message
-				if len(mh.MessageParts) != mh.PartsCount {
-					continue loop
-				}
-
-				// Order up PDUs
-				orderedBodies = make([]*bytes.Buffer, partsCount)
-				for _, mp := range mh.MessageParts {
-					orderedBodies[mp.PartID-1] = mp.Data
-				}
-
-				// Merge PDUs
-				var buf bytes.Buffer
-				for _, body := range orderedBodies {
-					buf.Write(body.Bytes())
-				}
-
-				p.Fields().Set(pdufield.ShortMessage, buf.Bytes())
-
-				// Handle
-				r.Handler(p)
-			}
-		}
+		p.Fields().Set(pdufield.ShortMessage, merged)
+		r.deliver(p)
 	}
 }
 
+// deliver hands p to the user handler, if one is configured.
+func (r *Receiver) deliver(p pdu.Body) {
+	if r.Handler != nil {
+		r.Handler(p)
+	}
+}
+
+// hasUDHI reports whether the PDU has the UDHI bit set in esm_class,
+// indicating that short_message is prefixed with a User Data Header.
+func hasUDHI(p pdu.Body) bool {
+	esm, ok := p.Fields()[pdufield.ESMClass].(*pdufield.Fixed)
+	if !ok {
+		return false
+	}
+	return esm.Data&0x40 != 0
+}
+
+// tryMerge accumulates a single concatenated-SMS part and returns the
+// reassembled payload once every part has arrived. It supports both the
+// 8-bit (IEI 0x00) and 16-bit (IEI 0x08) reference forms of UDH per
+// 3GPP TS 23.040 §9.2.3.24. body is the entire short_message field,
+// including the leading UDH length byte.
+func (r *Receiver) tryMerge(body []byte) ([]byte, bool) {
+	msgID, partsCount, partID, payload, ok := parseConcatUDH(body)
+	if !ok {
+		return nil, false
+	}
+
+	r.mg.Lock()
+	mh, exists := r.mg.mergeHolders[msgID]
+	if !exists {
+		mh = &MergeHolder{MessageID: msgID, PartsCount: partsCount}
+		r.mg.mergeHolders[msgID] = mh
+	}
+	mh.MessageParts = append(mh.MessageParts, &MessagePart{
+		PartID: partID,
+		Data:   bytes.NewBuffer(payload),
+	})
+	mh.LastWriteTime = time.Now()
+	if len(mh.MessageParts) != mh.PartsCount {
+		r.mg.Unlock()
+		return nil, false
+	}
+	parts := mh.MessageParts
+	delete(r.mg.mergeHolders, msgID)
+	r.mg.Unlock()
+
+	ordered := make([]*bytes.Buffer, partsCount)
+	for _, mp := range parts {
+		if mp.PartID < 1 || mp.PartID > partsCount {
+			return nil, false
+		}
+		ordered[mp.PartID-1] = mp.Data
+	}
+	var buf bytes.Buffer
+	for _, b := range ordered {
+		if b == nil {
+			return nil, false
+		}
+		buf.Write(b.Bytes())
+	}
+	return buf.Bytes(), true
+}
+
+// parseConcatUDH walks the IE list at the head of body looking for a
+// concatenation IE (8- or 16-bit reference). The returned payload is
+// body with the entire UDH (length byte + IEs) stripped.
+func parseConcatUDH(body []byte) (msgID, partsCount, partID int, payload []byte, ok bool) {
+	if len(body) < 1 {
+		return 0, 0, 0, nil, false
+	}
+	udhLen := int(body[0])
+	if udhLen < 5 || 1+udhLen > len(body) {
+		return 0, 0, 0, nil, false
+	}
+	head := body[1 : 1+udhLen]
+	payload = body[1+udhLen:]
+	for i := 0; i+2 <= len(head); {
+		iei := head[i]
+		ielen := int(head[i+1])
+		if i+2+ielen > len(head) {
+			return 0, 0, 0, nil, false
+		}
+		ie := head[i+2 : i+2+ielen]
+		switch iei {
+		case 0x00: // concatenated SMS, 8-bit reference
+			if ielen == 3 {
+				return int(ie[0]), int(ie[1]), int(ie[2]), payload, true
+			}
+		case 0x08: // concatenated SMS, 16-bit reference
+			if ielen == 4 {
+				return int(ie[0])<<8 | int(ie[1]), int(ie[2]), int(ie[3]), payload, true
+			}
+		}
+		i += 2 + ielen
+	}
+	return 0, 0, 0, nil, false
+}
+
+// mergeHoldersLen returns the number of in-flight partial messages.
+// Used by tests to verify cleanup and successful-merge eviction.
+func (r *Receiver) mergeHoldersLen() int {
+	r.mg.Lock()
+	defer r.mg.Unlock()
+	return len(r.mg.mergeHolders)
+}
+
 func (r *Receiver) mergeCleaner() {
-	timer := time.NewTimer(r.MergeCleanupInterval)
+	ticker := time.NewTicker(r.MergeCleanupInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-timer.C:
+		case <-ticker.C:
 			r.mg.Lock()
 			for _, mHolder := range r.mg.mergeHolders {
-				if time.Since(mHolder.LastWriteTime) > r.MergeInterval { // Message has expired, remove
+				if time.Since(mHolder.LastWriteTime) > r.MergeInterval {
 					delete(r.mg.mergeHolders, mHolder.MessageID)
 				}
 			}

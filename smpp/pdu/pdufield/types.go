@@ -88,9 +88,14 @@ type Variable struct {
 	Data []byte
 }
 
-// Len implements the Data interface.
+// Len implements the Data interface. It reports the wire length: the
+// length of Data plus one for the NUL terminator if Data is not
+// already terminated.
 func (v *Variable) Len() int {
-	return len(v.Bytes())
+	if len(v.Data) > 0 && v.Data[len(v.Data)-1] == 0x00 {
+		return len(v.Data)
+	}
+	return len(v.Data) + 1
 }
 
 // Raw implements the Data interface.
@@ -106,12 +111,17 @@ func (v *Variable) String() string {
 	return string(v.Data)
 }
 
-// Bytes implements the Data interface.
+// Bytes implements the Data interface. The returned slice never aliases
+// Data, and Data itself is never mutated even if it has spare capacity.
 func (v *Variable) Bytes() []byte {
 	if len(v.Data) > 0 && v.Data[len(v.Data)-1] == 0x00 {
-		return v.Data
+		out := make([]byte, len(v.Data))
+		copy(out, v.Data)
+		return out
 	}
-	return append(v.Data, 0x00)
+	out := make([]byte, len(v.Data)+1)
+	copy(out, v.Data)
+	return out
 }
 
 // SerializeTo implements the Data interface.
@@ -244,17 +254,19 @@ func (dsl *DestSmeList) SerializeTo(w io.Writer) error {
 	return err
 }
 
-// UnSme is a PDU field used for unsuccess sme addreses.
+// UnSme is a PDU field used for unsuccess sme addresses, as carried in
+// submit_multi_resp. ErrCode is a fixed 4-byte big-endian uint32 (per
+// SMPP 3.4 §4.5.2), not a NUL-terminated string.
 type UnSme struct {
 	Ton      Fixed
 	Npi      Fixed
 	DestAddr Variable
-	ErrCode  Variable
+	ErrCode  [4]byte
 }
 
 // Len implements the Data interface.
 func (us *UnSme) Len() int {
-	return us.Ton.Len() + us.Npi.Len() + us.DestAddr.Len() + us.ErrCode.Len()
+	return us.Ton.Len() + us.Npi.Len() + us.DestAddr.Len() + len(us.ErrCode)
 }
 
 // Raw implements the Data interface.
@@ -264,7 +276,7 @@ func (us *UnSme) Raw() interface{} {
 
 // String implements the Data interface.
 func (us *UnSme) String() string {
-	return us.Ton.String() + "," + us.Npi.String() + "," + us.DestAddr.String() + "," + strconv.Itoa(int(binary.BigEndian.Uint32(us.ErrCode.Data)))
+	return us.Ton.String() + "," + us.Npi.String() + "," + us.DestAddr.String() + "," + strconv.Itoa(int(binary.BigEndian.Uint32(us.ErrCode[:])))
 }
 
 // Bytes implements the Data interface.
@@ -273,7 +285,7 @@ func (us *UnSme) Bytes() []byte {
 	ret = append(ret, us.Ton.Bytes()...)
 	ret = append(ret, us.Npi.Bytes()...)
 	ret = append(ret, us.DestAddr.Bytes()...)
-	ret = append(ret, us.ErrCode.Bytes()...)
+	ret = append(ret, us.ErrCode[:]...)
 	return ret
 }
 

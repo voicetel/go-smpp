@@ -128,9 +128,10 @@ func (r *Receiver) bindFunc(c Conn) error {
 		r.mg.Unlock()
 	}
 
-	if r.Handler != nil {
-		go r.handlePDU()
-	}
+	// Always start handlePDU so the inbox channel is drained even when
+	// the user has not configured a Handler. Otherwise the unbuffered
+	// inbox blocks the client read loop on the first inbound PDU.
+	go r.handlePDU()
 
 	return nil
 }

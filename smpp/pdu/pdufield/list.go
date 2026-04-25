@@ -210,8 +210,11 @@ loop:
 					return nil, err
 				}
 				uns.DestAddr = Variable{Data: bt}
-				// Read error code
-				uns.ErrCode = Variable{Data: r.Next(4)}
+				// Read error code (4 bytes, big-endian uint32)
+				if r.Len() < 4 {
+					return nil, fmt.Errorf("short read for unsuccess_sme err_code: want 4, have %d", r.Len())
+				}
+				copy(uns.ErrCode[:], r.Next(4))
 				// Add unSme to the list
 				unsList = append(unsList, uns)
 			}

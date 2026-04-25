@@ -61,6 +61,51 @@ func TestVariable(t *testing.T) {
 	}
 }
 
+// TestVariableNoMutation guards against the original Bytes() that did
+// append(v.Data, 0x00) and could silently mutate or alias the caller's
+// slice when there was spare capacity.
+func TestVariableNoMutation(t *testing.T) {
+	src := make([]byte, 6, 16) // unterminated, plenty of spare cap
+	copy(src, "foobar")
+	f := &Variable{Data: src}
+
+	first := f.Bytes()
+	second := f.Bytes()
+
+	if !bytes.Equal(first, second) {
+		t.Fatalf("Bytes not idempotent: %q vs %q", first, second)
+	}
+	if &first[0] == &src[0] || &second[0] == &src[0] {
+		t.Fatal("Bytes returned slice aliasing Data")
+	}
+	if !bytes.Equal(src, []byte("foobar")) {
+		t.Fatalf("Data mutated: have %q", src)
+	}
+	if len(src) != 6 {
+		t.Fatalf("Data length grew: have %d", len(src))
+	}
+}
+
+// TestVariableLenMatchesBytes asserts Len reports the same number of
+// bytes that Bytes (and SerializeTo) actually emit, for both
+// terminated and unterminated input.
+func TestVariableLenMatchesBytes(t *testing.T) {
+	cases := [][]byte{
+		nil,
+		[]byte(""),
+		[]byte("foo"),
+		[]byte("foo\x00"),
+		[]byte("\x00"),
+	}
+	for _, in := range cases {
+		f := &Variable{Data: in}
+		if f.Len() != len(f.Bytes()) {
+			t.Fatalf("Len/Bytes mismatch for %q: Len=%d len(Bytes)=%d",
+				in, f.Len(), len(f.Bytes()))
+		}
+	}
+}
+
 func TestSM(t *testing.T) {
 	want := []byte("foobar")
 	f := &SM{Data: want}
@@ -160,20 +205,18 @@ func TestDestSmeList(t *testing.T) {
 }
 
 func TestUnSme(t *testing.T) {
-	err := []byte{0x00, 0x00, 0x00, 0x11}
+	errCode := [4]byte{0x00, 0x00, 0x00, 0x11}
 	var want []byte
 	want = append(want, byte(0x01))       // TON
 	want = append(want, byte(0x01))       // NPI
 	want = append(want, []byte("123")...) // Address
 	want = append(want, byte(0x00))       // null terminator
-	want = append(want, err...)           // Error
-	want = append(want, byte(0x00))       // null terminator
+	want = append(want, errCode[:]...)    // Error (4 bytes BE)
 
 	ton := Fixed{Data: byte(0x01)}
 	npi := Fixed{Data: byte(0x01)}
 	destAddr := Variable{Data: []byte("123")}
-	errCode := Variable{Data: err}
-	fieldLen := ton.Len() + npi.Len() + destAddr.Len() + errCode.Len()
+	fieldLen := ton.Len() + npi.Len() + destAddr.Len() + len(errCode)
 	strRep := ton.String() + "," + npi.String() + "," + destAddr.String() + "," + strconv.Itoa(17) // convertion to uint
 
 	f := UnSme{Ton: ton, Npi: npi, DestAddr: destAddr, ErrCode: errCode}
@@ -199,12 +242,11 @@ func TestUnSme(t *testing.T) {
 }
 
 func TestUnSmeList(t *testing.T) {
-	err := []byte{0x00, 0x00, 0x00, 0x11}
 	ton := Fixed{Data: byte(0x01)}
 	npi := Fixed{Data: byte(0x01)}
 	destAddr := Variable{Data: []byte("123")}
 	destAddr2 := Variable{Data: []byte("456")}
-	errCode := Variable{Data: err}
+	errCode := [4]byte{0x00, 0x00, 0x00, 0x11}
 
 	unSme1 := UnSme{Ton: ton, Npi: npi, DestAddr: destAddr, ErrCode: errCode}
 	unSme2 := UnSme{Ton: ton, Npi: npi, DestAddr: destAddr2, ErrCode: errCode}

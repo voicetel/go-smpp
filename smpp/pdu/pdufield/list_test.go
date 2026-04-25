@@ -123,11 +123,10 @@ func TestListDecoder_UnSmeList(t *testing.T) {
 		t.Fatalf("field is not type UnSmeList: %#v", f)
 	}
 
-	errC := []byte{0x00, 0x00, 0x00, 0x11}
 	ton := Fixed{Data: byte(0x01)}
 	npi := Fixed{Data: byte(0x01)}
 	destAddr := Variable{Data: []byte("123")}
-	errCode := Variable{Data: errC}
+	errCode := [4]byte{0x00, 0x00, 0x00, 0x11}
 	unSme1 := UnSme{Ton: ton, Npi: npi, DestAddr: destAddr, ErrCode: errCode}
 	resUnSmeList := &UnSmeList{Data: []UnSme{unSme1}}
 	if !bytes.Equal(resUnSmeList.Bytes(), v.Bytes()) {

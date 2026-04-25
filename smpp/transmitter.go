@@ -169,7 +169,7 @@ func newUnsucessDest(p pdufield.UnSme) UnsucessDest {
 	unDest.AddrTON, _ = p.Ton.Raw().(uint8) // if there is an error default value will be set
 	unDest.AddrNPI, _ = p.Npi.Raw().(uint8)
 	unDest.Address = string(p.DestAddr.Bytes())
-	unDest.Error = pdu.Status(binary.BigEndian.Uint32(p.ErrCode.Bytes()))
+	unDest.Error = pdu.Status(binary.BigEndian.Uint32(p.ErrCode[:]))
 	return unDest
 }
 

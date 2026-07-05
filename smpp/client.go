@@ -161,6 +161,13 @@ func (c *client) Bind() {
 				}
 			case pdu.EnquireLinkRespID:
 				c.updateEliTime()
+			case pdu.UnbindID:
+				// Reply to a peer-initiated unbind with unbind_resp echoing the
+				// request's sequence number (SMPP 3.4 §4.2/4.3), then let the
+				// session tear down. Also forward the unbind to the inbox so the
+				// application can observe it.
+				_ = c.conn.Write(pdu.NewUnbindRespSeq(p.Header().Seq))
+				c.inbox <- p
 			default:
 				c.inbox <- p
 			}

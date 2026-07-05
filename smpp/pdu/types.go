@@ -376,6 +376,14 @@ func NewUnbindResp() Body {
 	return b
 }
 
+// NewUnbindRespSeq creates a UnbindResp PDU echoing the given sequence number,
+// as required when replying to a peer-initiated unbind (SMPP 3.4 §4.2/4.3).
+func NewUnbindRespSeq(seq uint32) Body {
+	b := newUnbindResp(&Header{ID: UnbindRespID, Seq: seq})
+	b.init()
+	return b
+}
+
 // EnquireLink PDU.
 type EnquireLink struct{ *codec }
 

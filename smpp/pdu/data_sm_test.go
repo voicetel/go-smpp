@@ -8,8 +8,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/fiorix/go-smpp/smpp/pdu/pdufield"
-	"github.com/fiorix/go-smpp/smpp/pdu/pdutlv"
+	"github.com/voicetel/go-smpp/smpp/pdu/pdufield"
+	"github.com/voicetel/go-smpp/smpp/pdu/pdutlv"
 )
 
 // data_sm must round-trip: serialize a DataSM with mandatory fields plus a

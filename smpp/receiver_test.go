@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fiorix/go-smpp/smpp/pdu"
-	"github.com/fiorix/go-smpp/smpp/smpptest"
+	"github.com/voicetel/go-smpp/smpp/pdu"
+	"github.com/voicetel/go-smpp/smpp/smpptest"
 )
 
 func TestReceiver(t *testing.T) {

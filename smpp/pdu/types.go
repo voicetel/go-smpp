@@ -341,6 +341,56 @@ func NewDeliverSMResp() Body {
 	return b
 }
 
+// DataSM PDU. Per SMPP 3.4 §4.7.1 data_sm is the streamlined message-transfer
+// operation: it has no protocol_id/priority_flag/schedule_delivery_time/
+// validity_period/replace_if_present_flag/sm_default_msg_id/sm_length/
+// short_message fields — the user data rides in the message_payload TLV.
+type DataSM struct{ *codec }
+
+func newDataSM(hdr *Header) *codec {
+	return &codec{
+		h: hdr,
+		l: pdufield.List{
+			pdufield.ServiceType,
+			pdufield.SourceAddrTON,
+			pdufield.SourceAddrNPI,
+			pdufield.SourceAddr,
+			pdufield.DestAddrTON,
+			pdufield.DestAddrNPI,
+			pdufield.DestinationAddr,
+			pdufield.ESMClass,
+			pdufield.RegisteredDelivery,
+			pdufield.DataCoding,
+		},
+	}
+}
+
+// NewDataSM creates and initializes a new DataSM PDU.
+func NewDataSM() Body {
+	b := newDataSM(&Header{ID: DataSMID})
+	b.init()
+	return b
+}
+
+// DataSMResp PDU (SMPP 3.4 §4.7.2).
+type DataSMResp struct{ *codec }
+
+func newDataSMResp(hdr *Header) *codec {
+	return &codec{
+		h: hdr,
+		l: pdufield.List{
+			pdufield.MessageID,
+		},
+	}
+}
+
+// NewDataSMResp creates and initializes a new DataSMResp PDU.
+func NewDataSMResp() Body {
+	b := newDataSMResp(&Header{ID: DataSMRespID})
+	b.init()
+	return b
+}
+
 // NewDeliverSMRespSeq creates and initializes a new DeliverSMResp PDU for a specific seq.
 func NewDeliverSMRespSeq(seq uint32) Body {
 	b := newDeliverSMResp(&Header{ID: DeliverSMRespID, Seq: seq})

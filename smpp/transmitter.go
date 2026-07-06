@@ -128,8 +128,12 @@ func (t *Transmitter) handlePDU(f HandlerFunc) {
 		} else if f != nil {
 			f(p)
 		}
-		if p.Header().ID == pdu.DeliverSMID { // Send DeliverSMResp
+		switch p.Header().ID {
+		case pdu.DeliverSMID: // Send DeliverSMResp
 			pResp := pdu.NewDeliverSMRespSeq(p.Header().Seq)
+			t.cl.Write(pResp)
+		case pdu.DataSMID: // Send DataSMResp (SMPP 3.4 §4.7.2)
+			pResp := pdu.NewDataSMRespSeq(p.Header().Seq)
 			t.cl.Write(pResp)
 		}
 	}
@@ -182,7 +186,7 @@ type ShortMessage struct {
 	Register pdufield.DeliverySetting
 
 	// Other fields, normally optional.
-	TLVFields			 pdutlv.Fields
+	TLVFields            pdutlv.Fields
 	ServiceType          string
 	SourceAddrTON        uint8
 	SourceAddrNPI        uint8

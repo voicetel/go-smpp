@@ -154,6 +154,7 @@ func (r *Receiver) handlePDU() {
 		orderedBodies     []*bytes.Buffer
 	)
 	autoRespondDeliver := !idInList(pdu.DeliverSMID, r.SkipAutoRespondIDs)
+	autoRespondData := !idInList(pdu.DataSMID, r.SkipAutoRespondIDs)
 
 loop:
 	for {
@@ -162,9 +163,17 @@ loop:
 			break
 		}
 
-		if p.Header().ID == pdu.DeliverSMID && autoRespondDeliver { // Send DeliverSMResp
-			pResp := pdu.NewDeliverSMRespSeq(p.Header().Seq)
-			r.cl.Write(pResp)
+		switch p.Header().ID {
+		case pdu.DeliverSMID:
+			if autoRespondDeliver { // Send DeliverSMResp
+				pResp := pdu.NewDeliverSMRespSeq(p.Header().Seq)
+				r.cl.Write(pResp)
+			}
+		case pdu.DataSMID:
+			if autoRespondData { // Send DataSMResp (SMPP 3.4 §4.7.2)
+				pResp := pdu.NewDataSMRespSeq(p.Header().Seq)
+				r.cl.Write(pResp)
+			}
 		}
 
 		if r.MergeInterval == 0 { // Handle the PDU if merging is not needed

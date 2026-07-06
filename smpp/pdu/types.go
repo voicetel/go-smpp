@@ -391,6 +391,15 @@ func NewDataSMResp() Body {
 	return b
 }
 
+// NewDataSMRespSeq creates and initializes a new DataSMResp PDU for a
+// specific seq — used to acknowledge an SMSC-originated data_sm (SMPP 3.4
+// §4.7.2; message_id is not applicable in that direction and stays empty).
+func NewDataSMRespSeq(seq uint32) Body {
+	b := newDataSMResp(&Header{ID: DataSMRespID, Seq: seq})
+	b.init()
+	return b
+}
+
 // NewDeliverSMRespSeq creates and initializes a new DeliverSMResp PDU for a specific seq.
 func NewDeliverSMRespSeq(seq uint32) Body {
 	b := newDeliverSMResp(&Header{ID: DeliverSMRespID, Seq: seq})

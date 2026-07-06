@@ -104,15 +104,21 @@ func (srv *Server) Serve() {
 		}
 
 		c := newConn(cli)
+		srv.mu.Lock()
 		srv.conns = append(srv.conns, c)
+		srv.mu.Unlock()
 		go srv.handle(c)
 	}
 }
 
 // BroadcastMessage broadcasts a test PDU to the all bound clients
 func (srv *Server) BroadcastMessage(p pdu.Body) {
-	for i := range srv.conns {
-		srv.conns[i].Write(p)
+	srv.mu.Lock()
+	conns := make([]Conn, len(srv.conns))
+	copy(conns, srv.conns)
+	srv.mu.Unlock()
+	for i := range conns {
+		conns[i].Write(p)
 	}
 }
 

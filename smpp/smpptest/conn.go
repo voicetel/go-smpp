@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/voicetel/go-smpp/smpp/pdu"
 )
@@ -30,6 +31,10 @@ type conn struct {
 	rwc net.Conn
 	r   *bufio.Reader
 	w   *bufio.Writer
+	// wmu serializes writes: the server's handle goroutine (echoing via
+	// srv.Handler) and test goroutines (Server.BroadcastMessage) share this
+	// conn, and bufio.Writer is not safe for concurrent use.
+	wmu sync.Mutex
 }
 
 func newConn(c net.Conn) *conn {
@@ -57,6 +62,8 @@ func (c *conn) Write(p pdu.Body) error {
 	if err != nil {
 		return err
 	}
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
 	_, err = io.Copy(c.w, &b)
 	if err != nil {
 		return err

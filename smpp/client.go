@@ -167,9 +167,23 @@ func (c *client) Bind() {
 				// session tear down. Also forward the unbind to the inbox so the
 				// application can observe it.
 				_ = c.conn.Write(pdu.NewUnbindRespSeq(p.Header().Seq))
-				c.inbox <- p
+				select {
+				case c.inbox <- p:
+				case <-c.stop:
+					// Close() in progress: the dispatcher (the steady
+					// inbox reader) is gone. An unguarded send here
+					// blocks this goroutine forever — close(c.Status)
+					// is never reached and the client leaks as a
+					// zombie session. Drop the PDU and let the read
+					// loop unwind via the closed connection.
+				}
 			default:
-				c.inbox <- p
+				select {
+				case c.inbox <- p:
+				case <-c.stop:
+					// See UnbindID case: never block the bind loop
+					// once Close has begun.
+				}
 			}
 		}
 	retry:

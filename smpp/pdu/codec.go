@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
 
 	"github.com/voicetel/go-smpp/smpp/pdu/pdufield"
@@ -15,6 +16,13 @@ import (
 )
 
 var nextSeq uint32
+
+// serializeBufPool reuses the scratch buffer SerializeTo uses to stage the
+// PDU body (needed because the header's length octet must be written before
+// the body). Pooling keeps the byte output identical to serialize-then-copy
+// while removing a per-PDU buffer allocation and its grow churn on the
+// outbound hot path.
+var serializeBufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
 
 // codec is the base type of all PDUs.
 // It implements the PDU interface and provides a generic encoder.
@@ -84,19 +92,21 @@ func (pdu *codec) TLVFields() pdutlv.Map {
 
 // SerializeTo implements the PDU interface.
 func (pdu *codec) SerializeTo(w io.Writer) error {
-	var b bytes.Buffer
+	b := serializeBufPool.Get().(*bytes.Buffer)
+	b.Reset()
+	defer serializeBufPool.Put(b)
 	for _, k := range pdu.FieldList() {
 		f, ok := pdu.f[k]
 		if !ok {
 			pdu.f.Set(k, nil)
 			f = pdu.f[k]
 		}
-		if err := f.SerializeTo(&b); err != nil {
+		if err := f.SerializeTo(b); err != nil {
 			return err
 		}
 	}
 	for _, f := range pdu.TLVFields() {
-		if err := f.SerializeTo(&b); err != nil {
+		if err := f.SerializeTo(b); err != nil {
 			return err
 		}
 	}
@@ -106,11 +116,10 @@ func (pdu *codec) SerializeTo(w io.Writer) error {
 	// counting the map would overstate the wire length on PDUs that
 	// omit DataCoding (e.g. ReplaceSM).
 	pdu.h.Len = uint32(HeaderLen + b.Len())
-	err := pdu.h.SerializeTo(w)
-	if err != nil {
+	if err := pdu.h.SerializeTo(w); err != nil {
 		return err
 	}
-	_, err = io.Copy(w, &b)
+	_, err := w.Write(b.Bytes())
 	return err
 }
 

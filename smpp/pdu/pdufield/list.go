@@ -24,7 +24,7 @@ func (l List) Decode(r *bytes.Buffer) (Map, error) {
 
 		udhiFlag bool
 	)
-	f := make(Map)
+	f := make(Map, len(l)) // presize to the field count to avoid rehashing
 loop:
 	for _, k := range l {
 		switch k {

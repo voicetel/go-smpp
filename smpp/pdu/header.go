@@ -112,13 +112,29 @@ func DecodeHeader(r io.Reader) (*Header, error) {
 }
 
 // SerializeTo serializes the Header to its binary form to the given writer.
+// For an io.ByteWriter (bytes.Buffer, bufio.Writer — the writers every real
+// path uses) the 16-byte scratch stays on the stack; passing b[:] to the
+// io.Writer interface would otherwise force it to the heap on every PDU.
 func (h *Header) SerializeTo(w io.Writer) error {
-	var b [HeaderLen]byte // stack-allocated
+	if bw, ok := w.(io.ByteWriter); ok {
+		var b [HeaderLen]byte
+		binary.BigEndian.PutUint32(b[0:4], h.Len)
+		binary.BigEndian.PutUint32(b[4:8], uint32(h.ID))
+		binary.BigEndian.PutUint32(b[8:12], uint32(h.Status))
+		binary.BigEndian.PutUint32(b[12:16], h.Seq)
+		for _, c := range b {
+			if err := bw.WriteByte(c); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	b := make([]byte, HeaderLen)
 	binary.BigEndian.PutUint32(b[0:4], h.Len)
 	binary.BigEndian.PutUint32(b[4:8], uint32(h.ID))
 	binary.BigEndian.PutUint32(b[8:12], uint32(h.Status))
 	binary.BigEndian.PutUint32(b[12:16], h.Seq)
-	_, err := w.Write(b[:])
+	_, err := w.Write(b)
 	return err
 }
 

@@ -88,11 +88,24 @@ func (h *Header) Key() string {
 	return fmt.Sprintf("%o-%d", h.ID.Group(), h.Seq)
 }
 
-// DecodeHeader decodes binary PDU header data.
+// DecodeHeader decodes binary PDU header data. When r implements
+// io.ByteReader (bufio.Reader, bytes.Buffer/Reader — every real caller),
+// the 16-byte scratch stays on the stack; handing b[:] to io.ReadFull's
+// io.Reader parameter would force it to the heap on every inbound PDU.
 func DecodeHeader(r io.Reader) (*Header, error) {
-	var b [HeaderLen]byte // stack-allocated; escapes only if r keeps it
-	_, err := io.ReadFull(r, b[:])
-	if err != nil {
+	var b [HeaderLen]byte
+	if br, ok := r.(io.ByteReader); ok {
+		for i := range b {
+			c, err := br.ReadByte()
+			if err != nil {
+				if err == io.EOF && i > 0 {
+					err = io.ErrUnexpectedEOF
+				}
+				return nil, err
+			}
+			b[i] = c
+		}
+	} else if _, err := io.ReadFull(r, b[:]); err != nil {
 		return nil, err
 	}
 	l := binary.BigEndian.Uint32(b[0:4])

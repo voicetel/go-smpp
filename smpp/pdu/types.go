@@ -57,18 +57,20 @@ func NewGenericNACK() Body {
 // Bind PDU.
 type Bind struct{ *codec }
 
+var bindFieldList = pdufield.List{
+	pdufield.SystemID,
+	pdufield.Password,
+	pdufield.SystemType,
+	pdufield.InterfaceVersion,
+	pdufield.AddrTON,
+	pdufield.AddrNPI,
+	pdufield.AddressRange,
+}
+
 func newBind(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.SystemID,
-			pdufield.Password,
-			pdufield.SystemType,
-			pdufield.InterfaceVersion,
-			pdufield.AddrTON,
-			pdufield.AddrNPI,
-			pdufield.AddressRange,
-		}}
+		l: bindFieldList}
 }
 
 // NewBindReceiver creates a new Bind PDU.
@@ -95,10 +97,12 @@ func NewBindTransmitter() Body {
 // BindResp PDU.
 type BindResp struct{ *codec }
 
+var bindRespFieldList = pdufield.List{pdufield.SystemID}
+
 func newBindResp(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{pdufield.SystemID},
+		l: bindRespFieldList,
 	}
 }
 
@@ -126,15 +130,17 @@ func NewBindTransmitterResp() Body {
 // QuerySM PDU.
 type QuerySM struct{ *codec }
 
+var querySMFieldList = pdufield.List{
+	pdufield.MessageID,
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+}
+
 func newQuerySM(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.MessageID,
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-		},
+		l: querySMFieldList,
 	}
 }
 
@@ -148,15 +154,17 @@ func NewQuerySM() Body {
 // QuerySMResp PDU.
 type QuerySMResp struct{ *codec }
 
+var querySMRespFieldList = pdufield.List{
+	pdufield.MessageID,
+	pdufield.FinalDate,
+	pdufield.MessageState,
+	pdufield.ErrorCode,
+}
+
 func newQuerySMResp(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.MessageID,
-			pdufield.FinalDate,
-			pdufield.MessageState,
-			pdufield.ErrorCode,
-		},
+		l: querySMRespFieldList,
 	}
 }
 
@@ -170,29 +178,31 @@ func NewQuerySMResp() Body {
 // SubmitSM PDU.
 type SubmitSM struct{ *codec }
 
+var submitSMFieldList = pdufield.List{
+	pdufield.ServiceType,
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+	pdufield.DestAddrTON,
+	pdufield.DestAddrNPI,
+	pdufield.DestinationAddr,
+	pdufield.ESMClass,
+	pdufield.ProtocolID,
+	pdufield.PriorityFlag,
+	pdufield.ScheduleDeliveryTime,
+	pdufield.ValidityPeriod,
+	pdufield.RegisteredDelivery,
+	pdufield.ReplaceIfPresentFlag,
+	pdufield.DataCoding,
+	pdufield.SMDefaultMsgID,
+	pdufield.SMLength,
+	pdufield.ShortMessage,
+}
+
 func newSubmitSM(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.ServiceType,
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-			pdufield.DestAddrTON,
-			pdufield.DestAddrNPI,
-			pdufield.DestinationAddr,
-			pdufield.ESMClass,
-			pdufield.ProtocolID,
-			pdufield.PriorityFlag,
-			pdufield.ScheduleDeliveryTime,
-			pdufield.ValidityPeriod,
-			pdufield.RegisteredDelivery,
-			pdufield.ReplaceIfPresentFlag,
-			pdufield.DataCoding,
-			pdufield.SMDefaultMsgID,
-			pdufield.SMLength,
-			pdufield.ShortMessage,
-		},
+		l: submitSMFieldList,
 	}
 }
 
@@ -209,12 +219,14 @@ func NewSubmitSM(fields pdutlv.Fields) Body {
 // SubmitSMResp PDU.
 type SubmitSMResp struct{ *codec }
 
+var submitSMRespFieldList = pdufield.List{
+	pdufield.MessageID,
+}
+
 func newSubmitSMResp(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.MessageID,
-		},
+		l: submitSMRespFieldList,
 	}
 }
 
@@ -228,28 +240,30 @@ func NewSubmitSMResp() Body {
 // SubmitMulti PDU.
 type SubmitMulti struct{ *codec }
 
+var submitMultiFieldList = pdufield.List{
+	pdufield.ServiceType,
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+	pdufield.NumberDests,
+	pdufield.DestinationList, // contains DestFlag, DestAddrTON and DestAddrNPI for each address
+	pdufield.ESMClass,
+	pdufield.ProtocolID,
+	pdufield.PriorityFlag,
+	pdufield.ScheduleDeliveryTime,
+	pdufield.ValidityPeriod,
+	pdufield.RegisteredDelivery,
+	pdufield.ReplaceIfPresentFlag,
+	pdufield.DataCoding,
+	pdufield.SMDefaultMsgID,
+	pdufield.SMLength,
+	pdufield.ShortMessage,
+}
+
 func newSubmitMulti(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.ServiceType,
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-			pdufield.NumberDests,
-			pdufield.DestinationList, // contains DestFlag, DestAddrTON and DestAddrNPI for each address
-			pdufield.ESMClass,
-			pdufield.ProtocolID,
-			pdufield.PriorityFlag,
-			pdufield.ScheduleDeliveryTime,
-			pdufield.ValidityPeriod,
-			pdufield.RegisteredDelivery,
-			pdufield.ReplaceIfPresentFlag,
-			pdufield.DataCoding,
-			pdufield.SMDefaultMsgID,
-			pdufield.SMLength,
-			pdufield.ShortMessage,
-		},
+		l: submitMultiFieldList,
 	}
 }
 
@@ -266,14 +280,16 @@ func NewSubmitMulti(fields pdutlv.Fields) Body {
 // SubmitMultiResp PDU.
 type SubmitMultiResp struct{ *codec }
 
+var submitMultiRespFieldList = pdufield.List{
+	pdufield.MessageID,
+	pdufield.NoUnsuccess,
+	pdufield.UnsuccessSme,
+}
+
 func newSubmitMultiResp(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.MessageID,
-			pdufield.NoUnsuccess,
-			pdufield.UnsuccessSme,
-		},
+		l: submitMultiRespFieldList,
 	}
 }
 
@@ -287,29 +303,31 @@ func NewSubmitMultiResp() Body {
 // DeliverSM PDU.
 type DeliverSM struct{ *codec }
 
+var deliverSMFieldList = pdufield.List{
+	pdufield.ServiceType,
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+	pdufield.DestAddrTON,
+	pdufield.DestAddrNPI,
+	pdufield.DestinationAddr,
+	pdufield.ESMClass,
+	pdufield.ProtocolID,
+	pdufield.PriorityFlag,
+	pdufield.ScheduleDeliveryTime,
+	pdufield.ValidityPeriod,
+	pdufield.RegisteredDelivery,
+	pdufield.ReplaceIfPresentFlag,
+	pdufield.DataCoding,
+	pdufield.SMDefaultMsgID,
+	pdufield.SMLength,
+	pdufield.ShortMessage,
+}
+
 func newDeliverSM(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.ServiceType,
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-			pdufield.DestAddrTON,
-			pdufield.DestAddrNPI,
-			pdufield.DestinationAddr,
-			pdufield.ESMClass,
-			pdufield.ProtocolID,
-			pdufield.PriorityFlag,
-			pdufield.ScheduleDeliveryTime,
-			pdufield.ValidityPeriod,
-			pdufield.RegisteredDelivery,
-			pdufield.ReplaceIfPresentFlag,
-			pdufield.DataCoding,
-			pdufield.SMDefaultMsgID,
-			pdufield.SMLength,
-			pdufield.ShortMessage,
-		},
+		l: deliverSMFieldList,
 	}
 }
 
@@ -323,12 +341,14 @@ func NewDeliverSM() Body {
 // DeliverSMResp PDU.
 type DeliverSMResp struct{ *codec }
 
+var deliverSMRespFieldList = pdufield.List{
+	pdufield.MessageID,
+}
+
 func newDeliverSMResp(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.MessageID,
-		},
+		l: deliverSMRespFieldList,
 	}
 }
 
@@ -345,21 +365,23 @@ func NewDeliverSMResp() Body {
 // short_message fields — the user data rides in the message_payload TLV.
 type DataSM struct{ *codec }
 
+var dataSMFieldList = pdufield.List{
+	pdufield.ServiceType,
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+	pdufield.DestAddrTON,
+	pdufield.DestAddrNPI,
+	pdufield.DestinationAddr,
+	pdufield.ESMClass,
+	pdufield.RegisteredDelivery,
+	pdufield.DataCoding,
+}
+
 func newDataSM(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.ServiceType,
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-			pdufield.DestAddrTON,
-			pdufield.DestAddrNPI,
-			pdufield.DestinationAddr,
-			pdufield.ESMClass,
-			pdufield.RegisteredDelivery,
-			pdufield.DataCoding,
-		},
+		l: dataSMFieldList,
 	}
 }
 
@@ -378,12 +400,14 @@ func NewDataSM(fields pdutlv.Fields) Body {
 // DataSMResp PDU (SMPP 3.4 §4.7.2).
 type DataSMResp struct{ *codec }
 
+var dataSMRespFieldList = pdufield.List{
+	pdufield.MessageID,
+}
+
 func newDataSMResp(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.MessageID,
-		},
+		l: dataSMRespFieldList,
 	}
 }
 
@@ -449,19 +473,21 @@ func NewUnbindRespSeq(seq uint32) Body {
 // CancelSM PDU.
 type CancelSM struct{ *codec }
 
+var cancelSMFieldList = pdufield.List{
+	pdufield.ServiceType,
+	pdufield.MessageID,
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+	pdufield.DestAddrTON,
+	pdufield.DestAddrNPI,
+	pdufield.DestinationAddr,
+}
+
 func newCancelSM(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.ServiceType,
-			pdufield.MessageID,
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-			pdufield.DestAddrTON,
-			pdufield.DestAddrNPI,
-			pdufield.DestinationAddr,
-		},
+		l: cancelSMFieldList,
 	}
 }
 
@@ -489,21 +515,23 @@ func NewCancelSMResp() Body {
 // ReplaceSM PDU.
 type ReplaceSM struct{ *codec }
 
+var replaceSMFieldList = pdufield.List{
+	pdufield.MessageID,
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+	pdufield.ScheduleDeliveryTime,
+	pdufield.ValidityPeriod,
+	pdufield.RegisteredDelivery,
+	pdufield.SMDefaultMsgID,
+	pdufield.SMLength,
+	pdufield.ShortMessage,
+}
+
 func newReplaceSM(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.MessageID,
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-			pdufield.ScheduleDeliveryTime,
-			pdufield.ValidityPeriod,
-			pdufield.RegisteredDelivery,
-			pdufield.SMDefaultMsgID,
-			pdufield.SMLength,
-			pdufield.ShortMessage,
-		},
+		l: replaceSMFieldList,
 	}
 }
 
@@ -532,17 +560,19 @@ func NewReplaceSMResp() Body {
 // previously unavailable mobile station has become available.
 type AlertNotification struct{ *codec }
 
+var alertNotificationFieldList = pdufield.List{
+	pdufield.SourceAddrTON,
+	pdufield.SourceAddrNPI,
+	pdufield.SourceAddr,
+	pdufield.ESMAddrTON,
+	pdufield.ESMAddrNPI,
+	pdufield.ESMAddr,
+}
+
 func newAlertNotification(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.SourceAddrTON,
-			pdufield.SourceAddrNPI,
-			pdufield.SourceAddr,
-			pdufield.ESMAddrTON,
-			pdufield.ESMAddrNPI,
-			pdufield.ESMAddr,
-		},
+		l: alertNotificationFieldList,
 	}
 }
 
@@ -558,13 +588,15 @@ func NewAlertNotification() Body {
 // receiver.
 type Outbind struct{ *codec }
 
+var outbindFieldList = pdufield.List{
+	pdufield.SystemID,
+	pdufield.Password,
+}
+
 func newOutbind(hdr *Header) *codec {
 	return &codec{
 		h: hdr,
-		l: pdufield.List{
-			pdufield.SystemID,
-			pdufield.Password,
-		},
+		l: outbindFieldList,
 	}
 }
 

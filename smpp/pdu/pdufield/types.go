@@ -80,9 +80,14 @@ func (f *Fixed) Bytes() []byte {
 	return []byte{f.Data}
 }
 
-// SerializeTo implements the Data interface.
+// SerializeTo implements the Data interface. Writes the single octet via
+// io.ByteWriter when available (bytes.Buffer, bufio.Writer) to avoid the
+// 1-byte slice Bytes() allocates — there are several Fixed fields per PDU.
 func (f *Fixed) SerializeTo(w io.Writer) error {
-	_, err := w.Write(f.Bytes())
+	if bw, ok := w.(io.ByteWriter); ok {
+		return bw.WriteByte(f.Data)
+	}
+	_, err := w.Write([]byte{f.Data})
 	return err
 }
 

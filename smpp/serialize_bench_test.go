@@ -58,3 +58,56 @@ func BenchmarkConnWrite(b *testing.B) {
 		}
 	}
 }
+
+// benchDeliverSMWire builds the wire bytes of a representative deliver_sm
+// MO message (source/dest addrs + GSM-7 short_message) for decode benchmarks.
+func benchDeliverSMWire(b *testing.B) []byte {
+	b.Helper()
+	p := pdu.NewDeliverSM()
+	f := p.Fields()
+	f.Set(pdufield.ServiceType, "CMT")
+	f.Set(pdufield.SourceAddr, "15551234567")
+	f.Set(pdufield.DestinationAddr, "15559876543")
+	f.Set(pdufield.ShortMessage, pdutext.GSM7("Reply YES to confirm your appointment on the 5th."))
+	var buf bytes.Buffer
+	if err := p.SerializeTo(&buf); err != nil {
+		b.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// BenchmarkPDUDecode measures the inbound decode hot path: pdu.Decode of a
+// deliver_sm wire buffer (header + field-list decode).
+func BenchmarkPDUDecode(b *testing.B) {
+	wire := benchDeliverSMWire(b)
+	r := bytes.NewReader(wire)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.Reset(wire)
+		if _, err := pdu.Decode(r); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkRoundTrip measures a full submit serialize + deliver decode cycle,
+// approximating one outbound + one inbound PDU on a busy binding.
+func BenchmarkRoundTrip(b *testing.B) {
+	p := benchSubmitSM()
+	wire := benchDeliverSMWire(b)
+	var buf bytes.Buffer
+	r := bytes.NewReader(wire)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		if err := p.SerializeTo(&buf); err != nil {
+			b.Fatal(err)
+		}
+		r.Reset(wire)
+		if _, err := pdu.Decode(r); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

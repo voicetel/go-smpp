@@ -90,8 +90,8 @@ func (h *Header) Key() string {
 
 // DecodeHeader decodes binary PDU header data.
 func DecodeHeader(r io.Reader) (*Header, error) {
-	b := make([]byte, HeaderLen)
-	_, err := io.ReadFull(r, b)
+	var b [HeaderLen]byte // stack-allocated; escapes only if r keeps it
+	_, err := io.ReadFull(r, b[:])
 	if err != nil {
 		return nil, err
 	}
@@ -113,12 +113,12 @@ func DecodeHeader(r io.Reader) (*Header, error) {
 
 // SerializeTo serializes the Header to its binary form to the given writer.
 func (h *Header) SerializeTo(w io.Writer) error {
-	b := make([]byte, HeaderLen)
+	var b [HeaderLen]byte // stack-allocated
 	binary.BigEndian.PutUint32(b[0:4], h.Len)
 	binary.BigEndian.PutUint32(b[4:8], uint32(h.ID))
 	binary.BigEndian.PutUint32(b[8:12], uint32(h.Status))
 	binary.BigEndian.PutUint32(b[12:16], h.Seq)
-	_, err := w.Write(b)
+	_, err := w.Write(b[:])
 	return err
 }
 

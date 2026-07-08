@@ -75,7 +75,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 	// submit_sm + tlv field
-	p = pdu.NewSubmitSM(pdutlv.Fields{ pdutlv.TagReceiptedMessageID: pdutlv.CString("xyz123") })
+	p = pdu.NewSubmitSM(pdutlv.Fields{pdutlv.TagReceiptedMessageID: pdutlv.CString("xyz123")})
 	f = p.Fields()
 	f.Set(pdufield.SourceAddr, "foobar")
 	f.Set(pdufield.DestinationAddr, "bozo")

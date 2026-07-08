@@ -224,14 +224,14 @@ func newUnsucessDest(p pdufield.UnSme) UnsucessDest {
 // the Transmitter. When returned from Submit, the ShortMessage
 // provides Resp and RespID.
 type ShortMessage struct {
-	Src      string
-	Dst      string
-	DstList  []string // List of destination addreses for submit multi
-	DLs      []string //List if destribution list for submit multi
-	Text     pdutext.Codec
+	Src              string
+	Dst              string
+	DstList          []string // List of destination addreses for submit multi
+	DLs              []string //List if destribution list for submit multi
+	Text             pdutext.Codec
 	Validity         time.Duration
 	RelativeValidity bool // Use relative format (000000HHMMSS000R) instead of absolute.
-	Register pdufield.DeliverySetting
+	Register         pdufield.DeliverySetting
 
 	// Other fields, normally optional.
 	TLVFields            pdutlv.Fields

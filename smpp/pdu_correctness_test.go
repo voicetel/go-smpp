@@ -117,9 +117,9 @@ func TestConvertValidity_Relative(t *testing.T) {
 // whose declared length overruns the buffer, or a trailing partial IE).
 func TestNewGSMUserData_TruncatedDoesNotPanic(t *testing.T) {
 	for _, b := range [][]byte{
-		{0x00, 0x03, 0x01},       // IELength 3 but only 1 data byte follows
-		{0x00, 0x05, 0x01, 0x02}, // IELength 5, 2 bytes follow
-		{0x00},                   // IEI with no length byte
+		{0x00, 0x03, 0x01},                   // IELength 3 but only 1 data byte follows
+		{0x00, 0x05, 0x01, 0x02},             // IELength 5, 2 bytes follow
+		{0x00},                               // IEI with no length byte
 		{0x00, 0x03, 0x01, 0x02, 0x03, 0x08}, // valid IE then a trailing lone byte
 	} {
 		// New must return without panicking; content correctness is

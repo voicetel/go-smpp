@@ -53,7 +53,13 @@ type Transmitter struct {
 	tx struct {
 		count int32
 		sync.Mutex
-		inflight map[string]chan *tx
+		// inflight maps a request's sequence number to the channel
+		// waiting for its response. Keyed by bare seq (the client
+		// assigns seq from a single monotonic counter, so outstanding
+		// requests have distinct seqs); only response PDUs are matched
+		// against it (see handlePDU), so a server-initiated request
+		// reusing a seq from its own space can never collide.
+		inflight map[uint32]chan *tx
 	}
 }
 
@@ -74,7 +80,7 @@ func (t *Transmitter) Bind() <-chan ConnStatus {
 		return t.cl.Status
 	}
 	t.tx.Lock()
-	t.tx.inflight = make(map[string]chan *tx)
+	t.tx.inflight = make(map[uint32]chan *tx)
 	t.tx.Unlock()
 	c := &client{
 		Addr:               t.Addr,
@@ -119,10 +125,20 @@ func (t *Transmitter) handlePDU(f HandlerFunc) {
 		if err != nil || p == nil {
 			break
 		}
-		key := p.Header().Key()
-		t.tx.Lock()
-		rc := t.tx.inflight[key]
-		t.tx.Unlock()
+		// Correlate only responses (response bit set) to the waiting
+		// caller, matched by sequence number. A server-initiated
+		// request (deliver_sm, data_sm, …) is never looked up — it goes
+		// to the handler and is auto-acked below — so it cannot be
+		// misrouted into an in-flight request's channel even when its
+		// (independent) seq space collides with ours. generic_nack
+		// (group 0x0000) is a response and matches its request by seq,
+		// which a group-based key could not do.
+		var rc chan *tx
+		if p.Header().ID.IsResponse() {
+			t.tx.Lock()
+			rc = t.tx.inflight[p.Header().Seq]
+			t.tx.Unlock()
+		}
 		if rc != nil {
 			rc <- &tx{PDU: p}
 		} else if f != nil {
@@ -137,9 +153,18 @@ func (t *Transmitter) handlePDU(f HandlerFunc) {
 			t.cl.Write(pResp)
 		}
 	}
+	// Connection lost: notify every waiting caller. Use a non-blocking
+	// send — rc is buffered (cap 1), but a response delivered just
+	// before a caller's RespTimeout can leave the buffer already full
+	// with the caller gone; a blocking send here would then wedge this
+	// loop forever while holding t.tx.Lock, deadlocking every future
+	// Submit. The caller either drains the buffered value or times out.
 	t.tx.Lock()
 	for _, rc := range t.tx.inflight {
-		rc <- &tx{Err: ErrNotConnected}
+		select {
+		case rc <- &tx{Err: ErrNotConnected}:
+		default:
+		}
 	}
 	t.tx.Unlock()
 }
@@ -310,13 +335,13 @@ func (t *Transmitter) do(p pdu.Body) (*tx, error) {
 		}
 	}
 	rc := make(chan *tx, 1)
-	key := p.Header().Key()
+	seq := p.Header().Seq
 	t.tx.Lock()
-	t.tx.inflight[key] = rc
+	t.tx.inflight[seq] = rc
 	t.tx.Unlock()
 	defer func() {
 		t.tx.Lock()
-		delete(t.tx.inflight, key)
+		delete(t.tx.inflight, seq)
 		t.tx.Unlock()
 	}()
 	err := t.cl.Write(p)
@@ -411,7 +436,14 @@ func (t *Transmitter) SubmitLongMsg(sm *ShortMessage) ([]ShortMessage, error) {
 		if err != nil {
 			return nil, err
 		}
-		sm.resp = &smResp{p: resp.PDU}
+		// Attach the response to a per-part copy with its own smResp, and
+		// never touch the shared input sm's resp field: the old code did
+		// `sm.resp = &smResp{...}` on every iteration, an unsynchronized
+		// pointer swap that races any goroutine polling the original sm's
+		// Resp()/RespID() while later parts are still submitting. Each
+		// returned part keeps its own distinct response.
+		part := *sm
+		part.resp = &smResp{p: resp.PDU}
 		if resp.PDU == nil {
 			return parts, fmt.Errorf("unexpected empty PDU")
 		}
@@ -424,7 +456,7 @@ func (t *Transmitter) SubmitLongMsg(sm *ShortMessage) ([]ShortMessage, error) {
 		if resp.Err != nil {
 			return parts, resp.Err
 		}
-		parts = append(parts, *sm)
+		parts = append(parts, part)
 	}
 	return parts, nil
 }

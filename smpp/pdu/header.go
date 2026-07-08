@@ -61,6 +61,17 @@ func (id ID) Group() uint16 {
 	return binary.BigEndian.Uint16(b[2:4])
 }
 
+// IsResponse reports whether the PDU ID is a response (the SMPP 3.4
+// "response" bit, 0x80000000, is set). generic_nack (0x80000000) is a
+// response; every request PDU (submit_sm, deliver_sm, data_sm, unbind,
+// enquire_link, alert_notification, outbind, …) has the bit clear.
+// Response↔request correlation matches by sequence number only on
+// responses; server-initiated requests must never be matched against
+// the client's in-flight table.
+func (id ID) IsResponse() bool {
+	return uint32(id)&0x80000000 != 0
+}
+
 // HeaderLen is the PDU header length.
 const HeaderLen = 16
 

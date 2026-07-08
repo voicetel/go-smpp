@@ -31,6 +31,7 @@ type Receiver struct {
 	SkipAutoRespondIDs   []pdu.ID
 
 	chanClose chan struct{}
+	closeOnce sync.Once // guards close(chanClose) against a double Close()
 
 	// struct which holds the map of MergeHolders for the merging of the long incoming messages.
 	// It is used only if the incoming PDU holds UDH data and Receiver has MergeInterval > 0.
@@ -72,11 +73,16 @@ func (r *Receiver) Bind() <-chan ConnStatus {
 	r.cl.Lock()
 	defer r.cl.Unlock()
 
-	r.chanClose = make(chan struct{})
-
 	if r.cl.client != nil {
 		return r.cl.Status
 	}
+
+	// Create the close channel only on a genuine bind (past the
+	// already-bound early return), so a redundant Bind() on a live
+	// Receiver cannot overwrite the channel the running mergeCleaner is
+	// selecting on. Reset closeOnce so this new session can be closed.
+	r.chanClose = make(chan struct{})
+	r.closeOnce = sync.Once{}
 
 	c := &client{
 		Addr:               r.Addr,
@@ -326,6 +332,9 @@ func (r *Receiver) Close() error {
 	if r.cl.client == nil {
 		return ErrNotConnected
 	}
-	close(r.chanClose)
+	// closeOnce guards against a panic when Close() is called more than
+	// once — natural since the embedded client.Close is itself idempotent
+	// and Closer contracts usually tolerate repeat calls.
+	r.closeOnce.Do(func() { close(r.chanClose) })
 	return r.cl.Close()
 }

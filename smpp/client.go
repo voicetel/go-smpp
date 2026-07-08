@@ -98,8 +98,8 @@ type client struct {
 	inboxMtx sync.RWMutex // guards the inbox field, reassigned each reconnect
 	conn     *connSwitch
 	stop     chan struct{}
-	once  sync.Once
-	lmctx context.Context
+	once     sync.Once
+	lmctx    context.Context
 	// time of the last received EnquireLinkResp
 	eliTime time.Time
 	eliMtx  sync.RWMutex

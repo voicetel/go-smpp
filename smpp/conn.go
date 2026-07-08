@@ -111,27 +111,44 @@ func (c *conn) Close() error {
 //
 // If no Conn is available, any attempt to Read/Write/Close
 // returns ErrNotConnected.
+//
+// mu guards only the c pointer and is never held across I/O. wmu
+// serializes concurrent Write callers (bufio.Writer is not
+// concurrency-safe and PDU framing must not interleave). Keeping the
+// blocking write off mu is deliberate: when the peer's TCP window is
+// full a Write blocks in the kernel, and Close must still be able to
+// take mu, drop the pointer, and close the fd — which is what unblocks
+// the stuck write. Holding mu across the write instead would pin Close
+// (and the enquire-link watchdog's teardown) until TCP retransmit
+// timeout, potentially minutes.
 type connSwitch struct {
-	mu sync.Mutex
-	c  Conn
+	mu  sync.Mutex // guards c
+	wmu sync.Mutex // serializes Write I/O
+	c   Conn
+}
+
+// conn returns the current underlying Conn (or nil) under mu.
+func (cs *connSwitch) conn() Conn {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.c
 }
 
 // Set sets the underlying Conn with the given one.
 // If we hold a Conn already, it will be closed before switching over.
 func (cs *connSwitch) Set(c Conn) {
 	cs.mu.Lock()
-	if cs.c != nil {
-		cs.c.Close()
-	}
+	old := cs.c
 	cs.c = c
 	cs.mu.Unlock()
+	if old != nil {
+		old.Close()
+	}
 }
 
 // Read implements the Conn interface.
 func (cs *connSwitch) Read() (pdu.Body, error) {
-	cs.mu.Lock()
-	conn := cs.c
-	cs.mu.Unlock()
+	conn := cs.conn()
 	if conn == nil {
 		return nil, ErrNotConnected
 	}
@@ -140,22 +157,23 @@ func (cs *connSwitch) Read() (pdu.Body, error) {
 
 // Write implements the Conn interface.
 func (cs *connSwitch) Write(w pdu.Body) error {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	if cs.c == nil {
+	conn := cs.conn()
+	if conn == nil {
 		return ErrNotConnected
 	}
-	return cs.c.Write(w)
+	cs.wmu.Lock()
+	defer cs.wmu.Unlock()
+	return conn.Write(w)
 }
 
 // Close implements the Conn interface.
 func (cs *connSwitch) Close() error {
 	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	if cs.c == nil {
+	conn := cs.c
+	cs.c = nil
+	cs.mu.Unlock()
+	if conn == nil {
 		return ErrNotConnected
 	}
-	err := cs.c.Close()
-	cs.c = nil
-	return err
+	return conn.Close()
 }

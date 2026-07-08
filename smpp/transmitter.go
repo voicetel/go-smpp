@@ -53,6 +53,13 @@ type Transmitter struct {
 	TLS                *tls.Config   // TLS client settings, optional.
 	RateLimiter        RateLimiter   // Rate limiter, optional.
 	WindowSize         uint
+	// SkipAutoRespondIDs lists inbound PDU IDs (e.g. pdu.DeliverSMID,
+	// pdu.DataSMID) the read loop should NOT auto-acknowledge, leaving
+	// the response to the handler. Applies to Transmitter and, via
+	// embedding, Transceiver — mirroring Receiver.SkipAutoRespondIDs so
+	// a transceiver user can suppress auto-acks (and avoid double-acking
+	// when responding manually).
+	SkipAutoRespondIDs []pdu.ID
 	rMutex             sync.Mutex
 	r                  *rand.Rand
 
@@ -131,6 +138,8 @@ func (t *Transmitter) bindFunc(c Conn) error {
 
 // f is only set on transceiver.
 func (t *Transmitter) handlePDU(f HandlerFunc) {
+	autoRespondDeliver := !idInList(pdu.DeliverSMID, t.SkipAutoRespondIDs)
+	autoRespondData := !idInList(pdu.DataSMID, t.SkipAutoRespondIDs)
 	for {
 		p, err := t.cl.Read()
 		if err != nil || p == nil {
@@ -156,12 +165,14 @@ func (t *Transmitter) handlePDU(f HandlerFunc) {
 			f(p)
 		}
 		switch p.Header().ID {
-		case pdu.DeliverSMID: // Send DeliverSMResp
-			pResp := pdu.NewDeliverSMRespSeq(p.Header().Seq)
-			t.cl.Write(pResp)
-		case pdu.DataSMID: // Send DataSMResp (SMPP 3.4 §4.7.2)
-			pResp := pdu.NewDataSMRespSeq(p.Header().Seq)
-			t.cl.Write(pResp)
+		case pdu.DeliverSMID:
+			if autoRespondDeliver { // Send DeliverSMResp
+				t.cl.Write(pdu.NewDeliverSMRespSeq(p.Header().Seq))
+			}
+		case pdu.DataSMID:
+			if autoRespondData { // Send DataSMResp (SMPP 3.4 §4.7.2)
+				t.cl.Write(pdu.NewDataSMRespSeq(p.Header().Seq))
+			}
 		}
 	}
 	// Connection lost: notify every waiting caller. Use a non-blocking

@@ -6,10 +6,8 @@ package smpp
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/tls"
 	"errors"
-	"io"
 	"net"
 	"sync"
 
@@ -87,15 +85,12 @@ func (c *conn) Read() (pdu.Body, error) {
 	return pdu.Decode(c.r)
 }
 
-// Write implements the Conn interface.
+// Write implements the Conn interface. It serializes straight into the
+// buffered writer and flushes, avoiding an intermediate bytes.Buffer and
+// io.Copy per PDU. connSwitch.Write serializes concurrent callers, so the
+// two-step (buffer then flush) sequence is not shared across goroutines.
 func (c *conn) Write(w pdu.Body) error {
-	var b bytes.Buffer
-	err := w.SerializeTo(&b)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(c.w, &b)
-	if err != nil {
+	if err := w.SerializeTo(c.w); err != nil {
 		return err
 	}
 	return c.w.Flush()

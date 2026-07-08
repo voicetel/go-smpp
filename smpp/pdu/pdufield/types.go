@@ -127,11 +127,27 @@ func (v *Variable) Bytes() []byte {
 	return out
 }
 
-// SerializeTo implements the Data interface.
+// SerializeTo implements the Data interface. It writes Data directly and
+// appends the NUL terminator only when absent, avoiding the defensive copy
+// Bytes() makes — this runs once per C-octet-string field of every PDU, so
+// the per-field allocation is worth eliminating on the serialize hot path.
 func (v *Variable) SerializeTo(w io.Writer) error {
-	_, err := w.Write(v.Bytes())
+	if _, err := w.Write(v.Data); err != nil {
+		return err
+	}
+	if n := len(v.Data); n > 0 && v.Data[n-1] == 0x00 {
+		return nil // already NUL-terminated
+	}
+	if bw, ok := w.(io.ByteWriter); ok {
+		return bw.WriteByte(0x00)
+	}
+	_, err := w.Write(nulTerminator)
 	return err
 }
+
+// nulTerminator is the single-byte C-octet-string terminator, shared to
+// avoid a per-call allocation on the non-ByteWriter fallback path.
+var nulTerminator = []byte{0x00}
 
 // SM is a PDU field used for Short Messages.
 type SM struct {

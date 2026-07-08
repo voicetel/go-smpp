@@ -185,10 +185,21 @@ func (r *Receiver) handlePDU() {
 
 		sm, ok := p.Fields()[pdufield.ShortMessage].(*pdufield.SM)
 		if !ok {
+			// UDHI set but no short_message (e.g. data_sm carrying its
+			// body in the message_payload TLV): nothing to merge, so
+			// deliver the PDU rather than silently dropping it.
+			r.deliver(p)
 			continue
 		}
 
-		merged, ready := r.tryMerge(sm.Data)
+		merged, ready, isConcat := r.tryMerge(sm.Data)
+		if !isConcat {
+			// UDHI set but the UDH holds no concatenation IE (port
+			// addressing, single-segment WAP push, etc.): this is a
+			// complete message, deliver it as-is instead of dropping it.
+			r.deliver(p)
+			continue
+		}
 		if !ready {
 			continue
 		}
@@ -219,17 +230,39 @@ func hasUDHI(p pdu.Body) bool {
 // 8-bit (IEI 0x00) and 16-bit (IEI 0x08) reference forms of UDH per
 // 3GPP TS 23.040 §9.2.3.24. body is the entire short_message field,
 // including the leading UDH length byte.
-func (r *Receiver) tryMerge(body []byte) ([]byte, bool) {
+//
+// Returns (merged, ready, isConcat): isConcat is false when body carries
+// no concatenation IE (the caller should deliver the part as a complete
+// message); when isConcat is true, ready reports whether all parts have
+// arrived and merged holds the reassembled payload.
+func (r *Receiver) tryMerge(body []byte) (merged []byte, ready, isConcat bool) {
 	msgID, partsCount, partID, payload, ok := parseConcatUDH(body)
 	if !ok {
-		return nil, false
+		return nil, false, false
+	}
+	if partsCount < 1 || partID < 1 || partID > partsCount {
+		// Malformed segmentation header: don't buffer a bad part (it
+		// could never complete and would just leak until the cleaner
+		// evicts it). Treat as non-concat so the caller delivers it.
+		return nil, false, false
 	}
 
 	r.mg.Lock()
+	defer r.mg.Unlock()
 	mh, exists := r.mg.mergeHolders[msgID]
 	if !exists {
 		mh = &MergeHolder{MessageID: msgID, PartsCount: partsCount}
 		r.mg.mergeHolders[msgID] = mh
+	}
+	// Dedup by PartID: an SMSC retransmits a part when its
+	// deliver_sm_resp is lost, and the resp is sent before merging, so
+	// duplicates are expected. Appending blindly would advance the count
+	// past a missing slot and, on completion, discard the whole message.
+	for _, mp := range mh.MessageParts {
+		if mp.PartID == partID {
+			mh.LastWriteTime = time.Now()
+			return nil, false, true // already buffered; keep waiting
+		}
 	}
 	mh.MessageParts = append(mh.MessageParts, &MessagePart{
 		PartID: partID,
@@ -237,34 +270,41 @@ func (r *Receiver) tryMerge(body []byte) ([]byte, bool) {
 	})
 	mh.LastWriteTime = time.Now()
 	if len(mh.MessageParts) != mh.PartsCount {
-		r.mg.Unlock()
-		return nil, false
+		return nil, false, true
 	}
-	parts := mh.MessageParts
-	delete(r.mg.mergeHolders, msgID)
-	r.mg.Unlock()
 
+	// Complete set. Every part is in [1,partsCount] (validated on entry)
+	// and distinct (dedup above), so ordered has no gaps. Only remove the
+	// holder after a successful assembly, never before validation.
 	ordered := make([]*bytes.Buffer, partsCount)
-	for _, mp := range parts {
-		if mp.PartID < 1 || mp.PartID > partsCount {
-			return nil, false
-		}
+	for _, mp := range mh.MessageParts {
 		ordered[mp.PartID-1] = mp.Data
 	}
 	var buf bytes.Buffer
 	for _, b := range ordered {
 		if b == nil {
-			return nil, false
+			// Defensive: leave the holder in place for the cleaner
+			// rather than lose buffered parts.
+			return nil, false, true
 		}
 		buf.Write(b.Bytes())
 	}
-	return buf.Bytes(), true
+	delete(r.mg.mergeHolders, msgID)
+	return buf.Bytes(), true, true
 }
 
 // parseConcatUDH walks the IE list at the head of body looking for a
 // concatenation IE (8- or 16-bit reference). The returned payload is
-// body with the entire UDH (length byte + IEs) stripped.
+// body with the entire UDH (length byte + IEs) stripped. msgID is an
+// opaque merge key, never decoded back: the 8-bit and 16-bit reference
+// forms are namespaced apart (16-bit refs carry a high bit) so an 8-bit
+// ref 0x12 and a 16-bit ref 0x0012 don't collide into one merge holder.
+//
+// Note: the reference number is only unique per originating address, so
+// consumers merging traffic from multiple senders should additionally
+// namespace by source_addr; this key does not (the body alone lacks it).
 func parseConcatUDH(body []byte) (msgID, partsCount, partID int, payload []byte, ok bool) {
+	const ref16Namespace = 1 << 16 // keep 16-bit refs clear of the 8-bit range
 	if len(body) < 1 {
 		return 0, 0, 0, nil, false
 	}
@@ -288,7 +328,7 @@ func parseConcatUDH(body []byte) (msgID, partsCount, partID int, payload []byte,
 			}
 		case 0x08: // concatenated SMS, 16-bit reference
 			if ielen == 4 {
-				return int(ie[0])<<8 | int(ie[1]), int(ie[2]), int(ie[3]), payload, true
+				return ref16Namespace | int(ie[0])<<8 | int(ie[1]), int(ie[2]), int(ie[3]), payload, true
 			}
 		}
 		i += 2 + ielen

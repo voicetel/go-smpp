@@ -5,6 +5,7 @@
 package smpp
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -169,5 +170,63 @@ func TestReceiverNonUDHIPDUNotMerged(t *testing.T) {
 	body := got.Fields()[pdufield.ShortMessage].Bytes()
 	if string(body) != "plain" {
 		t.Fatalf("non-UDHI body: want %q, have %q", "plain", string(body))
+	}
+}
+
+// A UDHI-flagged single-part message whose UDH carries a non-concat IE
+// (here application-port addressing, IEI 0x05) must be delivered, not
+// silently dropped, when merging is enabled.
+func TestReceiverUDHINonConcatDelivered(t *testing.T) {
+	s, r, rc := newMergingReceiver(t, time.Second, 100*time.Millisecond)
+	defer r.Close()
+	defer s.Close()
+
+	// UDHL=6, IEI=0x05 (application port, 16-bit), IELen=4, ports, then text.
+	udh := []byte{0x06, 0x05, 0x04, 0x0b, 0x84, 0x23, 0xf0}
+	s.BroadcastMessage(deliverSMWithUDH(append(udh, []byte("wappush")...)))
+
+	got := waitForPDU(t, rc)
+	body := got.Fields()[pdufield.ShortMessage].Bytes()
+	if !bytes.Equal(body, append(udh, []byte("wappush")...)) {
+		t.Fatalf("non-concat UDHI body not delivered intact: have %q", string(body))
+	}
+}
+
+// A retransmitted part (duplicate PartID) must not advance the count and
+// discard the message; the genuine missing part must still complete it.
+func TestReceiverMergeDuplicatePart(t *testing.T) {
+	s, r, rc := newMergingReceiver(t, time.Second, 100*time.Millisecond)
+	defer r.Close()
+	defer s.Close()
+
+	s.BroadcastMessage(concat8Part(55, 2, 1, "A"))
+	s.BroadcastMessage(concat8Part(55, 2, 1, "A")) // duplicate retransmit
+	s.BroadcastMessage(concat8Part(55, 2, 2, "B"))
+
+	got := waitForPDU(t, rc)
+	body := got.Fields()[pdufield.ShortMessage].Bytes()
+	if string(body) != "AB" {
+		t.Fatalf("merged body after duplicate part: want %q, have %q", "AB", string(body))
+	}
+}
+
+// An 8-bit reference and a 16-bit reference with the same numeric value
+// must not collide into one merge holder.
+func TestReceiverMerge8And16BitRefNoCollision(t *testing.T) {
+	s, r, rc := newMergingReceiver(t, time.Second, 100*time.Millisecond)
+	defer r.Close()
+	defer s.Close()
+
+	// 8-bit ref 0x12 and 16-bit ref 0x0012 — same numeric value.
+	s.BroadcastMessage(concat8Part(0x12, 2, 1, "8a"))
+	s.BroadcastMessage(concat16Part(0x00, 0x12, 2, 1, "16a"))
+	s.BroadcastMessage(concat8Part(0x12, 2, 2, "8b"))
+	s.BroadcastMessage(concat16Part(0x00, 0x12, 2, 2, "16b"))
+
+	got1 := string(waitForPDU(t, rc).Fields()[pdufield.ShortMessage].Bytes())
+	got2 := string(waitForPDU(t, rc).Fields()[pdufield.ShortMessage].Bytes())
+	// Order between the two completed messages isn't guaranteed.
+	if !(got1 == "8a8b" && got2 == "16a16b") && !(got1 == "16a16b" && got2 == "8a8b") {
+		t.Fatalf("8-bit and 16-bit refs collided: got %q and %q", got1, got2)
 	}
 }

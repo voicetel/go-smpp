@@ -25,6 +25,17 @@ import (
 // the maximum window size configured for the Transmitter or Transceiver.
 var ErrMaxWindowSize = errors.New("reached max window size")
 
+// ErrShortMessageTooLong is returned when a single-PDU Submit is given a
+// short_message whose encoded length exceeds MaxShortMessageLen. sm_length
+// is a single octet (SMPP 3.4 §5.2.21); an over-length body would be
+// silently truncated modulo 256 on the wire. Use SubmitLongMsg (UDH
+// segmentation) or the message_payload TLV for longer content.
+var ErrShortMessageTooLong = errors.New("short_message exceeds 254 octets; use SubmitLongMsg or message_payload")
+
+// MaxShortMessageLen is the largest short_message the wire sm_length octet
+// can represent (SMPP 3.4 §5.2.21: 0-254; 255 is reserved).
+const MaxShortMessageLen = 254
+
 // MaxDestinationAddress is the maximum number of destination addresses allowed
 // in the submit_multi operation.
 const MaxDestinationAddress = 254
@@ -462,6 +473,9 @@ func (t *Transmitter) SubmitLongMsg(sm *ShortMessage) ([]ShortMessage, error) {
 }
 
 func (t *Transmitter) submitMsg(sm *ShortMessage, p pdu.Body, dataCoding uint8) (*ShortMessage, error) {
+	if sm.Text != nil && len(sm.Text.Encode()) > MaxShortMessageLen {
+		return nil, ErrShortMessageTooLong
+	}
 	f := p.Fields()
 	f.Set(pdufield.SourceAddr, sm.Src)
 	f.Set(pdufield.DestinationAddr, sm.Dst)
@@ -504,6 +518,9 @@ func (t *Transmitter) submitMsg(sm *ShortMessage, p pdu.Body, dataCoding uint8) 
 }
 
 func (t *Transmitter) submitMsgMulti(sm *ShortMessage, p pdu.Body, dataCoding uint8) (*ShortMessage, error) {
+	if sm.Text != nil && len(sm.Text.Encode()) > MaxShortMessageLen {
+		return nil, ErrShortMessageTooLong
+	}
 	numberOfDest := len(sm.DstList) + len(sm.DLs) // TODO: Validate numbers and lists according to size
 	if numberOfDest > MaxDestinationAddress {
 		return nil, fmt.Errorf("Error: Max number of destination addresses allowed is %d, trying to send to %d",
@@ -746,17 +763,33 @@ func (t *Transmitter) SubmitData(sm *ShortMessage) (*ShortMessage, error) {
 
 func convertValidity(d time.Duration, relative bool) string {
 	if relative {
-		// Relative time format YYMMDDhhmmsstnnp, see SMPP3.4 spec 7.1.1.
+		// Relative time format YYMMDDhhmmsstnnp, see SMPP 3.4 §7.1.1.
+		// Every field is exactly two digits, so days must roll up into
+		// (approximate) months and years rather than overflow the DD
+		// field — a >=100-day validity otherwise produced a 17-char,
+		// malformed period. Relative validity is inherently approximate;
+		// use 30-day months and 365-day years. Negative durations clamp
+		// to zero.
 		total := int(d.Seconds())
-		days := total / 86400
-		total %= 86400
-		hours := total / 3600
-		total %= 3600
-		minutes := total / 60
+		if total < 0 {
+			total = 0
+		}
 		seconds := total % 60
-		return fmt.Sprintf("%02d%02d%02d%02d%02d%02d000R", 0, 0, days, hours, minutes, seconds)
+		total /= 60
+		minutes := total % 60
+		total /= 60
+		hours := total % 24
+		total /= 24 // total is now whole days
+		years := total / 365
+		total %= 365
+		months := total / 30
+		days := total % 30
+		if years > 99 {
+			years = 99 // clamp at the two-digit field maximum
+		}
+		return fmt.Sprintf("%02d%02d%02d%02d%02d%02d000R", years, months, days, hours, minutes, seconds)
 	}
 	validity := time.Now().UTC().Add(d)
-	// Absolute time format YYMMDDhhmmsstnnp, see SMPP3.4 spec 7.1.1.
+	// Absolute time format YYMMDDhhmmsstnnp, see SMPP 3.4 §7.1.1.
 	return validity.Format("060102150405") + "000+"
 }

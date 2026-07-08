@@ -72,16 +72,21 @@ func New(n Name, data []byte) Body {
 		return &SM{Data: data}
 	case GSMUserData:
 		udhData := []UDH{}
-		if data != nil && len(data) > 2 {
-			for i := 0; i < len(data); {
-				udh := UDH{}
-				udh.IEI = Fixed{Data: data[i]}
-				udh.IELength = Fixed{Data: data[i+1]}
-				l := int(data[i+1])
-				udh.IEData = SM{Data: data[i+2 : i+2+l]}
-				udhData = append(udhData, udh)
-				i += l + 2
+		// Each IE is IEI(1) + IELength(1) + IEData(IELength). Bounds-check
+		// every read: a truncated IE (IELength running past the buffer, or
+		// a trailing byte with no length) must not panic on caller-supplied
+		// bytes — the wire decoder in list.go is separately bounded.
+		for i := 0; i+2 <= len(data); {
+			l := int(data[i+1])
+			if i+2+l > len(data) {
+				break // declared IE length overruns the buffer
 			}
+			udhData = append(udhData, UDH{
+				IEI:      Fixed{Data: data[i]},
+				IELength: Fixed{Data: data[i+1]},
+				IEData:   SM{Data: data[i+2 : i+2+l]},
+			})
+			i += l + 2
 		}
 		return &UDHList{Data: udhData}
 	default:

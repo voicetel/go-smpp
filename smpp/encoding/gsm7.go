@@ -165,7 +165,15 @@ func (g *gsm7Decoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, er
 				septets = append(septets, (src[count+4]&0x07<<4)|(src[count+3]&0xF0>>4))
 				septets = append(septets, (src[count+5]&0x03<<5)|(src[count+4]&0xF8>>3))
 				septets = append(septets, (src[count+6]&0x01<<6)|(src[count+5]&0xFC>>2))
-				if src[count+6] > 0 {
+				// Septet 8 of this block. In a non-final block (more
+				// octets follow) it is always a real character — only the
+				// FINAL block's spare high bits can be zero padding per
+				// TS 23.038 §6.1.2.1.1. Applying the "nonzero ⇒ emit"
+				// heuristic to every block silently drops a legitimate '@'
+				// (0x00) septet that lands on a block boundary mid-message
+				// (e.g. an email address's '@'). The trailing 7-septet
+				// ambiguity on the final block remains unresolvable here.
+				if count+7 < len(src) || src[count+6] > 0 {
 					septets = append(septets, src[count+6]&0xFE>>1)
 				}
 				count += 7
